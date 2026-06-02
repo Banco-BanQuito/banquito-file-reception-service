@@ -6,7 +6,7 @@ Microservicio Switch para recibir lotes de pagos masivos en archivo CSV/TXT desd
 POST /api/v1/payments/batches
 ```
 
-El servicio valida el archivo, registra la recepcion del lote, guarda auditoria de validacion en PostgreSQL, guarda el lote en MongoDB y publica cada linea aceptada en RabbitMQ.
+El servicio valida el archivo, registra la recepcion del lote, guarda auditoria de validacion en PostgreSQL, guarda el lote en MongoDB y publica las lineas aceptadas por RabbitMQ o gRPC.
 
 ## Funcionalidad
 
@@ -20,7 +20,7 @@ El servicio valida el archivo, registra la recepcion del lote, guarda auditoria 
 - Registra resultados en `payment_file_validation`.
 - Detecta duplicados por SHA-256 del archivo en los ultimos 30 dias.
 - Responde `202 Accepted` inmediatamente si la validacion del lote es correcta.
-- Publica cada linea aceptada como mensaje independiente en RabbitMQ.
+- Publica lineas aceptadas por RabbitMQ o gRPC segun `APP_PAYMENT_LINE_TRANSPORT`.
 - Aplica horario de corte 18:00 y agenda para el siguiente dia habil si llega despues del corte.
 - Expone `GET /actuator/health`.
 
@@ -133,10 +133,20 @@ POSTGRES_MAINTENANCE_DB=postgres
 
 MONGO_URI=mongodb://localhost:27017/file_reception
 
+APP_PAYMENT_LINE_TRANSPORT=rabbitmq
 APP_RABBIT_ENABLED=false
 MANAGEMENT_HEALTH_RABBIT_ENABLED=false
 
 APP_CORE_VALIDATION_ENABLED=false
+```
+
+Para enviar las lineas por gRPC en lugar de RabbitMQ:
+
+```properties
+APP_PAYMENT_LINE_TRANSPORT=grpc
+APP_GRPC_HOST=localhost
+APP_GRPC_PORT=9090
+APP_GRPC_DEADLINE_SECONDS=10
 ```
 
 Para integracion real con Core/Party/Rabbit:
@@ -339,3 +349,5 @@ Importala en Postman y valida que el campo `file` este como tipo `File`. Si Post
 - Despues de las 18:00 el lote queda con `scheduled_process_at` del siguiente dia habil.
 - `payment_batch.status` inicia como `RECEIVED`.
 - RabbitMQ publica en la cola `payment.lines.queue`.
+- gRPC usa el contrato `Batch/src/main/proto/payment_line_ingestion.proto`.
+- Para activar gRPC, configura `APP_PAYMENT_LINE_TRANSPORT=grpc` y apunta `APP_GRPC_HOST` / `APP_GRPC_PORT` al microservicio receptor.
