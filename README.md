@@ -186,6 +186,67 @@ docker run --rm --name banquito-file-reception-service `
   banquito-file-reception-service
 ```
 
+## Ejecutar Todo Con Docker Compose
+
+El repositorio incluye un `docker-compose.yml` que levanta:
+
+- PostgreSQL
+- MongoDB
+- RabbitMQ con consola web
+- `banquito-file-reception-service`
+
+Desde la raiz del repositorio:
+
+```powershell
+cd "C:\Users\User\Desktop\swith con microservicios7\banquito-file-reception-service"
+docker compose up --build
+```
+
+Servicios expuestos:
+
+| Servicio | URL / Puerto |
+|---|---|
+| Microservicio | `http://localhost:8084` |
+| Health | `http://localhost:8084/actuator/health` |
+| PostgreSQL | `localhost:5432` |
+| MongoDB | `mongodb://localhost:27017/file_reception` |
+| RabbitMQ AMQP | `localhost:5672` |
+| RabbitMQ Console | `http://localhost:15672` |
+
+Credenciales RabbitMQ:
+
+```text
+guest / guest
+```
+
+Credenciales PostgreSQL:
+
+```text
+postgres / 123
+```
+
+En Docker Compose se usa:
+
+```properties
+APP_CORE_VALIDATION_ENABLED=false
+APP_RABBIT_ENABLED=true
+MANAGEMENT_HEALTH_RABBIT_ENABLED=true
+```
+
+Esto permite probar el flujo completo con RabbitMQ real, pero sin depender de Core/Party Service.
+
+Para apagar y conservar datos:
+
+```powershell
+docker compose down
+```
+
+Para apagar y borrar volumenes de PostgreSQL, MongoDB y RabbitMQ:
+
+```powershell
+docker compose down -v
+```
+
 ## RabbitMQ Local
 
 Con Docker Desktop encendido:
