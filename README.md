@@ -22,6 +22,8 @@ El servicio valida el archivo, registra la recepcion del lote, guarda auditoria 
 - Responde `202 Accepted` inmediatamente si la validacion del lote es correcta.
 - Publica lineas aceptadas por RabbitMQ o gRPC segun `APP_PAYMENT_LINE_TRANSPORT`.
 - Aplica horario de corte 18:00 y agenda para el siguiente dia habil si llega despues del corte.
+- Consulta feriados en Core Banking mediante `CORE_HOLIDAY_ENDPOINT`; si Core no responde, usa regla lunes-viernes.
+- Valida la cuenta matriz contra la cuenta favorita del cliente mediante `CORE_FAVORITE_ACCOUNT_ENDPOINT`.
 - Expone `GET /actuator/health`.
 
 ## Endpoint Principal
@@ -138,6 +140,11 @@ APP_RABBIT_ENABLED=false
 MANAGEMENT_HEALTH_RABBIT_ENABLED=false
 
 APP_CORE_VALIDATION_ENABLED=false
+CORE_BASE_URL=http://localhost:8080
+CORE_HOLIDAY_ENDPOINT=/api/v2/calendar/holidays/check
+CORE_ACCOUNT_VALIDATION_ENDPOINT=/api/v1/accounts/validate
+CORE_FAVORITE_ACCOUNT_ENDPOINT=/api/v2/accounts/customer/{customerId}/favorite
+CORE_MASS_PAYMENT_SERVICE_ENDPOINT=/api/v1/customers/mass-payments/active
 ```
 
 Para enviar las lineas por gRPC en lugar de RabbitMQ:
@@ -156,7 +163,20 @@ APP_RABBIT_ENABLED=true
 MANAGEMENT_HEALTH_RABBIT_ENABLED=true
 APP_CORE_VALIDATION_ENABLED=true
 CORE_BASE_URL=http://localhost:8080
+CORE_HOLIDAY_ENDPOINT=/api/v2/calendar/holidays/check
+CORE_ACCOUNT_VALIDATION_ENDPOINT=/api/v1/accounts/validate
+CORE_FAVORITE_ACCOUNT_ENDPOINT=/api/v2/accounts/customer/{customerId}/favorite
+CORE_MASS_PAYMENT_SERVICE_ENDPOINT=/api/v1/customers/mass-payments/active
 ```
+
+Endpoints esperados en Core:
+
+| Variable | Uso |
+|---|---|
+| `CORE_HOLIDAY_ENDPOINT` | Consulta si una fecha es dia habil. Recibe `date` como query param. |
+| `CORE_ACCOUNT_VALIDATION_ENDPOINT` | Valida cada cuenta destino. Recibe `accountNumber` y `clientRuc` como query params. |
+| `CORE_FAVORITE_ACCOUNT_ENDPOINT` | Consulta la cuenta favorita del cliente usando `{customerId}` en la ruta. |
+| `CORE_MASS_PAYMENT_SERVICE_ENDPOINT` | Valida si el cliente tiene activo el servicio de pagos masivos. Recibe `clientRuc` y `serviceType` como query params. |
 
 ## Ejecutar Local
 
@@ -346,6 +366,8 @@ Importala en Postman y valida que el campo `file` este como tipo `File`. Si Post
 - `APP_CORE_VALIDATION_ENABLED=false` permite probar local sin Core/Party Service.
 - Cuando Core esta desactivado, la validacion de cuentas y servicio masivo se considera valida si los campos vienen informados.
 - Cuando Core esta desactivado, el calendario de dias habiles usa regla lunes-viernes.
+- Cuando Core esta activo, el calendario usa `CORE_HOLIDAY_ENDPOINT` y cae a regla lunes-viernes si la consulta falla.
+- Cuando Core esta activo, la cuenta matriz del archivo debe coincidir con la cuenta favorita retornada por `CORE_FAVORITE_ACCOUNT_ENDPOINT`.
 - Despues de las 18:00 el lote queda con `scheduled_process_at` del siguiente dia habil.
 - `payment_batch.status` inicia como `RECEIVED`.
 - RabbitMQ publica en la cola `payment.lines.queue`.
