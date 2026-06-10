@@ -216,7 +216,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         Instant scheduledProcessAt = LocalDateTime.of(nextBusinessDay, java.time.LocalTime.of(0, 1))
                 .atZone(zone)
                 .toInstant();
-        return new IngestionSchedule("RECEIVED", scheduledProcessAt);
+        return new IngestionSchedule("SCHEDULED", scheduledProcessAt);
     }
 
     private record IngestionSchedule(String status, Instant scheduledProcessAt) {
