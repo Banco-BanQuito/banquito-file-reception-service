@@ -71,7 +71,8 @@ class FileReceptionServiceTest {
 
     @Test
     void rejectsDuplicateBatchAndDoesNotPublish() throws Exception {
-        when(paymentBatchRepository.existsByFileHashAndReceivedAtAfter(anyString(), any())).thenReturn(true);
+        when(paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
+                anyString(), anyString(), any(), any())).thenReturn(true);
         when(routingCodeCatalogService.isValid("001")).thenReturn(true);
         when(coreBankingClient.isAccountValid(anyString(), anyString())).thenReturn(true);
 
@@ -88,7 +89,8 @@ class FileReceptionServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void rejectsInvalidRoutingCodeLineWithoutRejectingBatch() throws Exception {
-        when(paymentBatchRepository.existsByFileHashAndReceivedAtAfter(anyString(), any())).thenReturn(false);
+        when(paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
+                anyString(), anyString(), any(), any())).thenReturn(false);
         when(routingCodeCatalogService.isValid("001")).thenReturn(true);
         when(routingCodeCatalogService.isValid("999")).thenReturn(false);
         when(coreBankingClient.isAccountValid(anyString(), anyString())).thenReturn(true);
@@ -111,7 +113,8 @@ class FileReceptionServiceTest {
 
     @Test
     void returnsAcceptedBeforeCallingRabbitPublisher() throws Exception {
-        when(paymentBatchRepository.existsByFileHashAndReceivedAtAfter(anyString(), any())).thenReturn(false);
+        when(paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
+                anyString(), anyString(), any(), any())).thenReturn(false);
         when(routingCodeCatalogService.isValid("001")).thenReturn(true);
         when(coreBankingClient.isAccountValid(anyString(), anyString())).thenReturn(true);
 
