@@ -39,6 +39,12 @@ import ec.edu.espe.Switch.Batch.service.IRoutingCodeCatalogService;
 public class FileReceptionServiceImpl implements IFileReceptionService {
 
     private static final Logger logger = LoggerFactory.getLogger(FileReceptionServiceImpl.class);
+    private static final List<String> DUPLICATE_SUCCESS_STATUSES = List.of(
+            "RECEIVED",
+            "ENQUEUED",
+            "SCHEDULED",
+            "COMPLETED",
+            "SUCCESS");
 
     private final ICsvBatchParser csvBatchParser;
     private final FileReceptionProperties properties;
@@ -78,7 +84,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         String batchId = UUID.randomUUID().toString();
         Instant receivedAt = Instant.now();
         IngestionSchedule schedule = resolveIngestionSchedule(receivedAt);
-        boolean duplicateValid = !isDuplicate(batch.fileHash(), receivedAt);
+        boolean duplicateValid = !isDuplicate(file.getOriginalFilename(), batch.fileHash(), receivedAt);
 
         PaymentBatchDocument batchDocument = saveBatch(file, batch, batchId, receivedAt, schedule.scheduledProcessAt(),
                 duplicateValid ? schedule.status() : "DUPLICATE");
@@ -127,9 +133,13 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         }
     }
 
-    private boolean isDuplicate(String hash, Instant receivedAt) {
+    private boolean isDuplicate(String fileName, String hash, Instant receivedAt) {
         Instant threshold = receivedAt.minus(properties.getDuplicateWindowDays(), ChronoUnit.DAYS);
-        return paymentBatchRepository.existsByFileHashAndReceivedAtAfter(hash, threshold);
+        return paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
+                fileName,
+                hash,
+                DUPLICATE_SUCCESS_STATUSES,
+                threshold);
     }
 
     private PaymentBatchDocument saveBatch(MultipartFile file,
@@ -209,14 +219,14 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         var receivedDateTime = receivedAt.atZone(zone).toLocalDateTime();
         boolean businessDay = businessDayService.isBusinessDay(receivedDateTime.toLocalDate());
         LocalTime cutoffTime = LocalTime.of(properties.getCutoffHour(), 0);
-        if (businessDay && !receivedDateTime.toLocalTime().isAfter(cutoffTime)) {
+        if (businessDay && receivedDateTime.toLocalTime().isBefore(cutoffTime)) {
             return new IngestionSchedule("RECEIVED", receivedAt);
         }
         LocalDate nextBusinessDay = businessDayService.nextBusinessDay(receivedDateTime.toLocalDate());
         Instant scheduledProcessAt = LocalDateTime.of(nextBusinessDay, java.time.LocalTime.of(0, 1))
                 .atZone(zone)
                 .toInstant();
-        return new IngestionSchedule("SCHEDULED", scheduledProcessAt);
+        return new IngestionSchedule("ENQUEUED", scheduledProcessAt);
     }
 
     private record IngestionSchedule(String status, Instant scheduledProcessAt) {
