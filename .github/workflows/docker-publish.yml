@@ -28,4 +28,4 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/file-reception-serviceatest
+          tags: ghcr.io/banco-banquito/file-reception-service:latest
