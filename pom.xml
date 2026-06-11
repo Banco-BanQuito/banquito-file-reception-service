@@ -8,7 +8,7 @@
 		<version>4.0.6</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>ec.edu.espe.Switch</groupId>
+	<groupId>ec.edu.espe.switchbatch</groupId>
 	<artifactId>banquito-file-reception-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>banquito-file-reception-service</name>
@@ -31,6 +31,13 @@
 		<grpc.version>1.64.0</grpc.version>
 		<protobuf.version>3.25.3</protobuf.version>
 		<protobuf-plugin.version>0.6.1</protobuf-plugin.version>
+		<jacoco.version>0.8.14</jacoco.version>
+		<sonar-maven-plugin.version>3.10.0.2594</sonar-maven-plugin.version>
+		<sonar.projectKey>banquito-file-reception-service</sonar.projectKey>
+		<sonar.projectName>banquito-file-reception-service</sonar.projectName>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.exclusions>**/dto/**,**/exception/**,**/config/**,target/generated-sources/**,target/generated-test-sources/**</sonar.exclusions>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -120,6 +127,26 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
 			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.xolstice.maven.plugins</groupId>
 				<artifactId>protobuf-maven-plugin</artifactId>
 				<version>${protobuf-plugin.version}</version>
@@ -136,6 +163,11 @@
 						</goals>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar-maven-plugin.version}</version>
 			</plugin>
 		</plugins>
 	</build>

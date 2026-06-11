@@ -2,10 +2,8 @@ syntax = "proto3";
 
 package switch.batch.v1;
 
-import "google/protobuf/timestamp.proto";
-
 option java_multiple_files = true;
-option java_package = "ec.edu.espe.Switch.Batch.grpc";
+option java_package = "ec.edu.espe.switchbatch.grpc";
 
 service PaymentLineIngestionService {
   rpc PublishBatchLines(PublishBatchLinesRequest) returns (PublishBatchLinesResponse);
@@ -13,7 +11,7 @@ service PaymentLineIngestionService {
 
 message PublishBatchLinesRequest {
   string batch_id = 1;
-  google.protobuf.Timestamp scheduled_process_at = 2;
+  string scheduled_process_at = 2;
   repeated BatchLine lines = 3;
 }
 
