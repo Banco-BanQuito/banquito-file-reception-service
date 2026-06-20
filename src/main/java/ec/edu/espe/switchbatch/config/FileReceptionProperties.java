@@ -20,8 +20,6 @@ public class FileReceptionProperties {
     private String coreFavoriteAccountEndpoint = "/api/v2/accounts/customer/{customerId}/favorite";
     private String coreMassPaymentServiceEndpoint = "/api/v1/customers/mass-payments/active";
     private boolean coreValidationEnabled = true;
-    // Solo para pruebas en ambientes no productivos: ignora la regla de fin de semana/feriado
-    // y trata cualquier día como hábil. Por defecto apagado — no afecta el comportamiento real.
     private boolean forceBusinessDay = false;
 
     public int getDuplicateWindowDays() {
