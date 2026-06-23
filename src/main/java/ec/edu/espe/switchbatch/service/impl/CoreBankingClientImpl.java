@@ -124,11 +124,11 @@ public class CoreBankingClientImpl implements ICoreBankingClient {
         }
     }
 
+    // No se gatea con coreValidationEnabled: ese flag desactiva validaciones de
+    // party-service (cuenta favorita, servicio activo) para entornos de prueba,
+    // pero el saldo es real en account-core y debitarlo de más rompe la dispersión.
     @Override
     public boolean hasSufficientBalance(String accountNumber, BigDecimal requiredAmount) {
-        if (!properties.isCoreValidationEnabled()) {
-            return true;
-        }
         if (accountNumber == null || accountNumber.isBlank() || requiredAmount == null) {
             return false;
         }
