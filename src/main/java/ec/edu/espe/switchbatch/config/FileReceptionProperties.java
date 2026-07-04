@@ -9,9 +9,13 @@ public class FileReceptionProperties {
     private String fileDelimiter = ",";
     private PaymentLineTransport paymentLineTransport = PaymentLineTransport.RABBITMQ;
     private boolean rabbitEnabled = false;
-    private String rabbitQueue = "payment.lines.queue";
     private String rabbitExchange = "payment.exchange";
-    private String rabbitRoutingKey = "payment.lines";
+    private String rabbitQueueOnUs = "payment.lines.onus.queue";
+    private String rabbitQueueOffUs = "payment.lines.offus.queue";
+    private String rabbitQueueInvalid = "payment.lines.invalid.queue";
+    private String rabbitRoutingKeyOnUs = "onus";
+    private String rabbitRoutingKeyOffUs = "offus";
+    private String rabbitRoutingKeyInvalid = "invalid";
     private String grpcHost = "localhost";
     private int grpcPort = 9090;
     private long grpcDeadlineSeconds = 10;
@@ -57,14 +61,6 @@ public class FileReceptionProperties {
         this.rabbitEnabled = rabbitEnabled;
     }
 
-    public String getRabbitQueue() {
-        return rabbitQueue;
-    }
-
-    public void setRabbitQueue(String rabbitQueue) {
-        this.rabbitQueue = rabbitQueue;
-    }
-
     public String getRabbitExchange() {
         return rabbitExchange;
     }
@@ -73,12 +69,52 @@ public class FileReceptionProperties {
         this.rabbitExchange = rabbitExchange;
     }
 
-    public String getRabbitRoutingKey() {
-        return rabbitRoutingKey;
+    public String getRabbitQueueOnUs() {
+        return rabbitQueueOnUs;
     }
 
-    public void setRabbitRoutingKey(String rabbitRoutingKey) {
-        this.rabbitRoutingKey = rabbitRoutingKey;
+    public void setRabbitQueueOnUs(String rabbitQueueOnUs) {
+        this.rabbitQueueOnUs = rabbitQueueOnUs;
+    }
+
+    public String getRabbitQueueOffUs() {
+        return rabbitQueueOffUs;
+    }
+
+    public void setRabbitQueueOffUs(String rabbitQueueOffUs) {
+        this.rabbitQueueOffUs = rabbitQueueOffUs;
+    }
+
+    public String getRabbitQueueInvalid() {
+        return rabbitQueueInvalid;
+    }
+
+    public void setRabbitQueueInvalid(String rabbitQueueInvalid) {
+        this.rabbitQueueInvalid = rabbitQueueInvalid;
+    }
+
+    public String getRabbitRoutingKeyOnUs() {
+        return rabbitRoutingKeyOnUs;
+    }
+
+    public void setRabbitRoutingKeyOnUs(String rabbitRoutingKeyOnUs) {
+        this.rabbitRoutingKeyOnUs = rabbitRoutingKeyOnUs;
+    }
+
+    public String getRabbitRoutingKeyOffUs() {
+        return rabbitRoutingKeyOffUs;
+    }
+
+    public void setRabbitRoutingKeyOffUs(String rabbitRoutingKeyOffUs) {
+        this.rabbitRoutingKeyOffUs = rabbitRoutingKeyOffUs;
+    }
+
+    public String getRabbitRoutingKeyInvalid() {
+        return rabbitRoutingKeyInvalid;
+    }
+
+    public void setRabbitRoutingKeyInvalid(String rabbitRoutingKeyInvalid) {
+        this.rabbitRoutingKeyInvalid = rabbitRoutingKeyInvalid;
     }
 
     public String getGrpcHost() {

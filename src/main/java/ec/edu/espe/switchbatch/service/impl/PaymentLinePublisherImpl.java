@@ -68,9 +68,19 @@ public class PaymentLinePublisherImpl implements IPaymentLinePublisher {
         };
 
         for (BatchLineMessage message : messages) {
-            rabbitTemplate.convertAndSend(properties.getRabbitExchange(), properties.getRabbitRoutingKey(),
+            rabbitTemplate.convertAndSend(properties.getRabbitExchange(), routingKeyFor(message),
                     message, timestampPostProcessor);
         }
+    }
+
+    private String routingKeyFor(BatchLineMessage message) {
+        if ("ON_US".equals(message.routingClassification())) {
+            return properties.getRabbitRoutingKeyOnUs();
+        }
+        if ("OFF_US".equals(message.routingClassification())) {
+            return properties.getRabbitRoutingKeyOffUs();
+        }
+        return properties.getRabbitRoutingKeyInvalid();
     }
 
     private void publishWithGrpc(String batchId, Instant scheduledProcessAt, List<BatchLineMessage> messages) {

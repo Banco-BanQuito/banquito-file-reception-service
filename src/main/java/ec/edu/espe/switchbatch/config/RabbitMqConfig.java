@@ -15,8 +15,18 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMqConfig {
 
     @Bean
-    public Queue paymentLinesQueue(FileReceptionProperties properties) {
-        return new Queue(properties.getRabbitQueue(), true);
+    public Queue onUsQueue(FileReceptionProperties properties) {
+        return new Queue(properties.getRabbitQueueOnUs(), true);
+    }
+
+    @Bean
+    public Queue offUsQueue(FileReceptionProperties properties) {
+        return new Queue(properties.getRabbitQueueOffUs(), true);
+    }
+
+    @Bean
+    public Queue invalidRoutingQueue(FileReceptionProperties properties) {
+        return new Queue(properties.getRabbitQueueInvalid(), true);
     }
 
     @Bean
@@ -25,9 +35,21 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public Binding paymentLinesBinding(Queue paymentLinesQueue, DirectExchange paymentExchange,
-                                        FileReceptionProperties properties) {
-        return BindingBuilder.bind(paymentLinesQueue).to(paymentExchange).with(properties.getRabbitRoutingKey());
+    public Binding onUsBinding(Queue onUsQueue, DirectExchange paymentExchange,
+                               FileReceptionProperties properties) {
+        return BindingBuilder.bind(onUsQueue).to(paymentExchange).with(properties.getRabbitRoutingKeyOnUs());
+    }
+
+    @Bean
+    public Binding offUsBinding(Queue offUsQueue, DirectExchange paymentExchange,
+                                FileReceptionProperties properties) {
+        return BindingBuilder.bind(offUsQueue).to(paymentExchange).with(properties.getRabbitRoutingKeyOffUs());
+    }
+
+    @Bean
+    public Binding invalidRoutingBinding(Queue invalidRoutingQueue, DirectExchange paymentExchange,
+                                         FileReceptionProperties properties) {
+        return BindingBuilder.bind(invalidRoutingQueue).to(paymentExchange).with(properties.getRabbitRoutingKeyInvalid());
     }
 
     @Bean
