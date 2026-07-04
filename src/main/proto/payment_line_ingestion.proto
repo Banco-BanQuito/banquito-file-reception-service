@@ -3,7 +3,7 @@ syntax = "proto3";
 package switch.batch.v1;
 
 option java_multiple_files = true;
-option java_package = "ec.edu.espe.switchbatch.grpc";
+option java_package = "ec.edu.espe.switchpayments.switchbatch.grpc";
 
 service PaymentLineIngestionService {
   rpc PublishBatchLines(PublishBatchLinesRequest) returns (PublishBatchLinesResponse);

@@ -75,7 +75,9 @@ services:
       RABBITMQ_VHOST: /
       APP_PAYMENT_LINE_TRANSPORT: rabbitmq
       APP_RABBIT_ENABLED: "true"
-      APP_RABBIT_QUEUE: payment.lines.queue
+      APP_RABBIT_QUEUE_ONUS: payment.lines.onus.queue
+      APP_RABBIT_QUEUE_OFFUS: payment.lines.offus.queue
+      APP_RABBIT_QUEUE_INVALID: payment.lines.invalid.queue
       APP_GRPC_HOST: payment-line-processor
       APP_GRPC_PORT: "9090"
       APP_GRPC_DEADLINE_SECONDS: "10"
