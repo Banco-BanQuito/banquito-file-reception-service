@@ -344,6 +344,22 @@ public class PaymentDispatchService {
         }
 
         BigDecimal refund = batch.getRejectedAmount();
+        String debitAccount = (batch.getOriginatingAccount() != null && !batch.getOriginatingAccount().isBlank())
+                ? batch.getOriginatingAccount()
+                : properties.getCorporateAccountNumber();
+
+        if (refund.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                log.info("[RF-03][REFUND] Devolviendo monto rechazado={} a cuenta={} para batchId={}",
+                        refund, debitAccount, batch.getBatchId());
+                coreBankingClient.corporateRefund(batch.getBatchId(), debitAccount, refund);
+            } catch (Exception e) {
+                log.error("[RF-03][REFUND] Devolución fallida para batchId={} (lote permanece {}): {}",
+                        batch.getBatchId(), outcomeStatus, e.getMessage());
+                refund = BigDecimal.ZERO;
+            }
+        }
+
         try {
             TariffCalculationGrpcRequest tariffReq = TariffCalculationGrpcRequest.newBuilder()
                     .setSuccessfulTx(batch.getSuccessfulRecords())
@@ -351,24 +367,14 @@ public class PaymentDispatchService {
                     .build();
             TariffCalculationGrpcResponse tariffResp = tariffClient.calculateTariff(tariffReq);
 
-            String debitAccount = (batch.getOriginatingAccount() != null && !batch.getOriginatingAccount().isBlank())
-                    ? batch.getOriginatingAccount()
-                    : properties.getCorporateAccountNumber();
-
             BigDecimal commission = new BigDecimal(tariffResp.getTotalCharge());
             if (commission.compareTo(BigDecimal.ZERO) > 0) {
                 log.info("[RF-04][COMMISSION] Debitando comisión={} de cuenta={} para batchId={}",
                         commission, debitAccount, batch.getBatchId());
                 coreBankingClient.corporateDebit(batch.getBatchId(), debitAccount, BigDecimal.ZERO, commission);
             }
-
-            if (refund.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("[RF-03][REFUND] Devolviendo monto rechazado={} a cuenta={} para batchId={}",
-                        refund, debitAccount, batch.getBatchId());
-                coreBankingClient.corporateRefund(batch.getBatchId(), debitAccount, refund);
-            }
         } catch (Exception e) {
-            log.error("[RF-04] Cobro de comisión o devolución falló para batchId={} (lote permanece {}): {}",
+            log.error("[RF-04] Cobro de comisión fallido para batchId={} (lote permanece {}): {}",
                     batch.getBatchId(), outcomeStatus, e.getMessage());
         }
 

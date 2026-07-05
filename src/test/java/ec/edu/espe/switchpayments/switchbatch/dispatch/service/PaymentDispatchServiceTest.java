@@ -146,6 +146,26 @@ class PaymentDispatchServiceTest {
     }
 
     @Test
+    void processInvalidLine_debeDevolverMontoRechazado_aunqueFalleCalculoDeTarifa() {
+        PaymentBatch batchAlCompletar = new PaymentBatch();
+        batchAlCompletar.setBatchId(BATCH_1);
+        batchAlCompletar.setDeclaredTotalRecords(1);
+        batchAlCompletar.setSuccessfulRecords(0);
+        batchAlCompletar.setRejectedRecords(1);
+        batchAlCompletar.setRejectedAmount(new BigDecimal("100.00"));
+        batchAlCompletar.setOriginatingAccount("0001111111");
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+                any(FindAndModifyOptions.class), eq(PaymentBatch.class)))
+                .thenReturn(batchAlCompletar);
+        when(tariffClient.calculateTariff(any())).thenThrow(new RuntimeException("UNAVAILABLE: io exception"));
+
+        BatchLineMessage message = buildMessage(BATCH_1, 1, "999", null, "0009999999", new BigDecimal("100.00"));
+        dispatchService.processInvalidLine(message);
+
+        verify(coreBankingClient).corporateRefund(BATCH_1, "0001111111", new BigDecimal("100.00"));
+    }
+
+    @Test
     void processOnUsLine_debeIgnorarMensajeDuplicado_cuandoHayDuplicateKey() {
         BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
         when(detailRepository.save(any(PaymentDetail.class)))
