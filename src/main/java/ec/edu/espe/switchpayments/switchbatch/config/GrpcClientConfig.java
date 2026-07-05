@@ -3,7 +3,8 @@ package ec.edu.espe.switchpayments.switchbatch.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import ec.edu.espe.switchpayments.switchbatch.grpc.PaymentLineIngestionServiceGrpc;
+import com.banquito.payswitch.notification.NotificationServiceGrpc;
+import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffGrpcServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -11,16 +12,28 @@ import io.grpc.ManagedChannelBuilder;
 public class GrpcClientConfig {
 
     @Bean(destroyMethod = "shutdown")
-    public ManagedChannel paymentLineManagedChannel(FileReceptionProperties properties) {
+    public ManagedChannel tariffManagedChannel(FileReceptionProperties properties) {
         return ManagedChannelBuilder
-                .forAddress(properties.getGrpcHost(), properties.getGrpcPort())
+                .forAddress(properties.getTariffGrpcHost(), properties.getTariffGrpcPort())
                 .usePlaintext()
                 .build();
     }
 
     @Bean
-    public PaymentLineIngestionServiceGrpc.PaymentLineIngestionServiceBlockingStub paymentLineIngestionStub(
-            ManagedChannel paymentLineManagedChannel) {
-        return PaymentLineIngestionServiceGrpc.newBlockingStub(paymentLineManagedChannel);
+    public TariffGrpcServiceGrpc.TariffGrpcServiceBlockingStub tariffGrpcStub(ManagedChannel tariffManagedChannel) {
+        return TariffGrpcServiceGrpc.newBlockingStub(tariffManagedChannel);
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    public ManagedChannel notificationManagedChannel(FileReceptionProperties properties) {
+        return ManagedChannelBuilder
+                .forAddress(properties.getNotificationGrpcHost(), properties.getNotificationGrpcPort())
+                .usePlaintext()
+                .build();
+    }
+
+    @Bean
+    public NotificationServiceGrpc.NotificationServiceBlockingStub notificationGrpcStub(ManagedChannel notificationManagedChannel) {
+        return NotificationServiceGrpc.newBlockingStub(notificationManagedChannel);
     }
 }

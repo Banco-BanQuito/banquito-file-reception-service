@@ -2,7 +2,6 @@ package ec.edu.espe.switchpayments.switchbatch.service.impl;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,12 +12,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
-import ec.edu.espe.switchpayments.switchbatch.config.PaymentLineTransport;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
-import ec.edu.espe.switchpayments.switchbatch.grpc.BatchLine;
-import ec.edu.espe.switchpayments.switchbatch.grpc.PaymentLineIngestionServiceGrpc;
-import ec.edu.espe.switchpayments.switchbatch.grpc.PublishBatchLinesRequest;
-import ec.edu.espe.switchpayments.switchbatch.grpc.PublishBatchLinesResponse;
 import ec.edu.espe.switchpayments.switchbatch.service.IPaymentLinePublisher;
 
 @Service
@@ -28,25 +22,17 @@ public class PaymentLinePublisherImpl implements IPaymentLinePublisher {
 
     private final FileReceptionProperties properties;
     private final ObjectProvider<RabbitTemplate> rabbitTemplateProvider;
-    private final ObjectProvider<PaymentLineIngestionServiceGrpc.PaymentLineIngestionServiceBlockingStub> paymentLineStubProvider;
 
     public PaymentLinePublisherImpl(
             FileReceptionProperties properties,
-            ObjectProvider<RabbitTemplate> rabbitTemplateProvider,
-            ObjectProvider<PaymentLineIngestionServiceGrpc.PaymentLineIngestionServiceBlockingStub> paymentLineStubProvider) {
+            ObjectProvider<RabbitTemplate> rabbitTemplateProvider) {
         this.properties = properties;
         this.rabbitTemplateProvider = rabbitTemplateProvider;
-        this.paymentLineStubProvider = paymentLineStubProvider;
     }
 
     @Override
     @Async
     public void publish(String batchId, Instant scheduledProcessAt, List<BatchLineMessage> messages) {
-        if (PaymentLineTransport.GRPC.equals(properties.getPaymentLineTransport())) {
-            publishWithGrpc(batchId, scheduledProcessAt, messages);
-            return;
-        }
-
         publishWithRabbitMq(batchId, scheduledProcessAt, messages);
     }
 
@@ -81,46 +67,5 @@ public class PaymentLinePublisherImpl implements IPaymentLinePublisher {
             return properties.getRabbitRoutingKeyOffUs();
         }
         return properties.getRabbitRoutingKeyInvalid();
-    }
-
-    private void publishWithGrpc(String batchId, Instant scheduledProcessAt, List<BatchLineMessage> messages) {
-        PaymentLineIngestionServiceGrpc.PaymentLineIngestionServiceBlockingStub stub = paymentLineStubProvider.getIfAvailable();
-        if (stub == null) {
-            logger.warn("Stub gRPC no disponible. No se publicaron lineas para batch {}", batchId);
-            return;
-        }
-
-        PublishBatchLinesRequest request = PublishBatchLinesRequest.newBuilder()
-                .setBatchId(batchId)
-                .setScheduledProcessAt(scheduledProcessAt.toString())
-                .addAllLines(messages.stream().map(this::toGrpcLine).toList())
-                .build();
-
-        PublishBatchLinesResponse response = stub
-                .withDeadlineAfter(properties.getGrpcDeadlineSeconds(), TimeUnit.SECONDS)
-                .publishBatchLines(request);
-
-        if (response.getAccepted()) {
-            logger.info("{} lineas publicadas por gRPC para batch {}", messages.size(), batchId);
-        } else {
-            logger.warn("El receptor gRPC rechazo batch {}: {}", batchId, response.getMessage());
-        }
-    }
-
-    private BatchLine toGrpcLine(BatchLineMessage message) {
-        return BatchLine.newBuilder()
-                .setBatchId(message.batchId())
-                .setLineNumber(message.lineNumber())
-                .setRoutingCode(message.routingCode())
-                .setAccountDestination(message.accountDestination())
-                .setAmount(message.amount().toPlainString())
-                .setReference(nullToEmpty(message.reference()))
-                .setBeneficiaryName(nullToEmpty(message.beneficiaryName()))
-                .setBeneficiaryEmail(nullToEmpty(message.beneficiaryEmail()))
-                .build();
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

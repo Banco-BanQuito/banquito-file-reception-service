@@ -11,4 +11,10 @@ public interface ICoreBankingClient {
     boolean hasActiveMassPaymentService(String clientRuc, String serviceType);
 
     boolean hasSufficientBalance(String accountNumber, BigDecimal requiredAmount);
+
+    void batchCredit(String batchId, String accountDestination, BigDecimal amount, String reference, String transactionUuid);
+
+    void corporateDebit(String batchId, String accountNumber, BigDecimal totalAmount, BigDecimal commissionAmount);
+
+    void corporateRefund(String batchId, String accountNumber, BigDecimal refundAmount);
 }
