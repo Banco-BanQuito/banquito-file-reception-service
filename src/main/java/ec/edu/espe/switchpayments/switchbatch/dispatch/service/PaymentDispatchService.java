@@ -10,7 +10,7 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.client.TariffGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.OffUsClearingMessage;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentBatch;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentDetail;
-import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDetailRepository;
+import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchDetailRepository;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
 import org.slf4j.Logger;
@@ -48,7 +48,7 @@ public class PaymentDispatchService {
     private static final String STATUS_PROCESSING = "PROCESSING";
     private static final String STATUS_FAILED = "FAILED";
 
-    private final PaymentDetailRepository detailRepository;
+    private final PaymentDispatchDetailRepository detailRepository;
     private final MongoTemplate mongoTemplate;
     private final ICoreBankingClient coreBankingClient;
     private final TariffGrpcClient tariffClient;
@@ -58,7 +58,7 @@ public class PaymentDispatchService {
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> debitOutcomes = new ConcurrentHashMap<>();
 
-    public PaymentDispatchService(PaymentDetailRepository detailRepository,
+    public PaymentDispatchService(PaymentDispatchDetailRepository detailRepository,
                                    MongoTemplate mongoTemplate,
                                    ICoreBankingClient coreBankingClient,
                                    TariffGrpcClient tariffClient,

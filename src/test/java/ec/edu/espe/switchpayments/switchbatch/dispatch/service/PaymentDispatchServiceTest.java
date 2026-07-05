@@ -7,7 +7,7 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.client.TariffGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.OffUsClearingMessage;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentBatch;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentDetail;
-import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDetailRepository;
+import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchDetailRepository;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +43,7 @@ class PaymentDispatchServiceTest {
     private static final String BATCH_2 = "22222222-2222-2222-2222-222222222222";
 
     @Mock
-    private PaymentDetailRepository detailRepository;
+    private PaymentDispatchDetailRepository detailRepository;
 
     @Mock
     private MongoTemplate mongoTemplate;
