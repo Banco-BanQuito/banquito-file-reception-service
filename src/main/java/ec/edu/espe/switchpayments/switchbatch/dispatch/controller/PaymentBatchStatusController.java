@@ -2,7 +2,7 @@ package ec.edu.espe.switchpayments.switchbatch.dispatch.controller;
 
 import ec.edu.espe.switchpayments.switchbatch.dispatch.dto.BatchStatusResponse;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentBatch;
-import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentBatchRepository;
+import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchBatchRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v2/payments/batches")
 public class PaymentBatchStatusController {
 
-    private final PaymentBatchRepository batchRepository;
+    private final PaymentDispatchBatchRepository batchRepository;
 
-    public PaymentBatchStatusController(PaymentBatchRepository batchRepository) {
+    public PaymentBatchStatusController(PaymentDispatchBatchRepository batchRepository) {
         this.batchRepository = batchRepository;
     }
 

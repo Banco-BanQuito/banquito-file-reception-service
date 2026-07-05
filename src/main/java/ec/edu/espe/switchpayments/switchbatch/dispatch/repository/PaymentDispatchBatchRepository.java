@@ -6,6 +6,6 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface PaymentBatchRepository extends MongoRepository<PaymentBatch, String> {
+public interface PaymentDispatchBatchRepository extends MongoRepository<PaymentBatch, String> {
     Optional<PaymentBatch> findByBatchId(String batchId);
 }
