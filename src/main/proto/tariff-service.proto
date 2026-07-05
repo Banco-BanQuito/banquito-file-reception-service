@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package banquito.tariff;
+
+option java_multiple_files = true;
+option java_package = "ec.edu.espe.banquito.banquitotariffservice.grpc";
+option java_outer_classname = "TariffProto";
+
+service TariffGrpcService {
+  rpc CalculateTariff (TariffCalculationGrpcRequest) returns (TariffCalculationGrpcResponse);
+}
+
+message TariffCalculationGrpcRequest {
+  int32 successful_tx = 1;
+  string batch_id = 2;
+}
+
+message TariffCalculationGrpcResponse {
+  int32 successful_tx = 1;
+  string unit_fee = 2;
+  string commission_subtotal = 3;
+  string iva_rate = 4;
+  string iva_amount = 5;
+  string total_charge = 6;
+  string tariff_range_applied = 7;
+}

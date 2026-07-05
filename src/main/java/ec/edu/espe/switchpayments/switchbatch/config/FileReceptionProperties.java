@@ -7,7 +7,6 @@ public class FileReceptionProperties {
 
     private int duplicateWindowDays = 30;
     private String fileDelimiter = ",";
-    private PaymentLineTransport paymentLineTransport = PaymentLineTransport.RABBITMQ;
     private boolean rabbitEnabled = false;
     private String rabbitExchange = "payment.exchange";
     private String rabbitQueueOnUs = "payment.lines.onus.queue";
@@ -16,9 +15,11 @@ public class FileReceptionProperties {
     private String rabbitRoutingKeyOnUs = "onus";
     private String rabbitRoutingKeyOffUs = "offus";
     private String rabbitRoutingKeyInvalid = "invalid";
-    private String grpcHost = "localhost";
-    private int grpcPort = 9090;
     private long grpcDeadlineSeconds = 10;
+    private String tariffGrpcHost = "localhost";
+    private int tariffGrpcPort = 9090;
+    private String notificationGrpcHost = "localhost";
+    private int notificationGrpcPort = 9092;
     private int cutoffHour = 18;
     private String coreBaseUrl = "http://localhost:8080";
     private String coreHolidayEndpoint = "/api/v2/calendar/holidays/check";
@@ -26,8 +27,15 @@ public class FileReceptionProperties {
     private String coreFavoriteAccountEndpoint = "/api/v2/accounts/customer/{customerId}/favorite";
     private String coreMassPaymentServiceEndpoint = "/api/v1/customers/mass-payments/active";
     private String coreBalanceEndpoint = "/api/v2/accounts/{accountNumber}/balance";
+    private String coreBatchCreditEndpoint = "/api/v2/payments/batch-credit";
+    private String coreCorporateDebitEndpoint = "/api/v2/payments/corporate-debit";
+    private String coreCorporateRefundEndpoint = "/api/v2/payments/corporate-refund";
     private boolean coreValidationEnabled = true;
     private boolean forceBusinessDay = false;
+    private String corporateAccountNumber = "0000000000";
+    private boolean dispatchLocalCompletionEnabled = false;
+    private String clearingExchange = "clearing.exchange";
+    private String clearingRoutingKey = "clearing.outbound";
 
     public int getDuplicateWindowDays() {
         return duplicateWindowDays;
@@ -43,14 +51,6 @@ public class FileReceptionProperties {
 
     public void setFileDelimiter(String fileDelimiter) {
         this.fileDelimiter = fileDelimiter;
-    }
-
-    public PaymentLineTransport getPaymentLineTransport() {
-        return paymentLineTransport;
-    }
-
-    public void setPaymentLineTransport(PaymentLineTransport paymentLineTransport) {
-        this.paymentLineTransport = paymentLineTransport;
     }
 
     public boolean isRabbitEnabled() {
@@ -117,20 +117,36 @@ public class FileReceptionProperties {
         this.rabbitRoutingKeyInvalid = rabbitRoutingKeyInvalid;
     }
 
-    public String getGrpcHost() {
-        return grpcHost;
+    public String getTariffGrpcHost() {
+        return tariffGrpcHost;
     }
 
-    public void setGrpcHost(String grpcHost) {
-        this.grpcHost = grpcHost;
+    public void setTariffGrpcHost(String tariffGrpcHost) {
+        this.tariffGrpcHost = tariffGrpcHost;
     }
 
-    public int getGrpcPort() {
-        return grpcPort;
+    public int getTariffGrpcPort() {
+        return tariffGrpcPort;
     }
 
-    public void setGrpcPort(int grpcPort) {
-        this.grpcPort = grpcPort;
+    public void setTariffGrpcPort(int tariffGrpcPort) {
+        this.tariffGrpcPort = tariffGrpcPort;
+    }
+
+    public String getNotificationGrpcHost() {
+        return notificationGrpcHost;
+    }
+
+    public void setNotificationGrpcHost(String notificationGrpcHost) {
+        this.notificationGrpcHost = notificationGrpcHost;
+    }
+
+    public int getNotificationGrpcPort() {
+        return notificationGrpcPort;
+    }
+
+    public void setNotificationGrpcPort(int notificationGrpcPort) {
+        this.notificationGrpcPort = notificationGrpcPort;
     }
 
     public long getGrpcDeadlineSeconds() {
@@ -211,5 +227,61 @@ public class FileReceptionProperties {
 
     public void setForceBusinessDay(boolean forceBusinessDay) {
         this.forceBusinessDay = forceBusinessDay;
+    }
+
+    public String getCoreBatchCreditEndpoint() {
+        return coreBatchCreditEndpoint;
+    }
+
+    public void setCoreBatchCreditEndpoint(String coreBatchCreditEndpoint) {
+        this.coreBatchCreditEndpoint = coreBatchCreditEndpoint;
+    }
+
+    public String getCoreCorporateDebitEndpoint() {
+        return coreCorporateDebitEndpoint;
+    }
+
+    public void setCoreCorporateDebitEndpoint(String coreCorporateDebitEndpoint) {
+        this.coreCorporateDebitEndpoint = coreCorporateDebitEndpoint;
+    }
+
+    public String getCoreCorporateRefundEndpoint() {
+        return coreCorporateRefundEndpoint;
+    }
+
+    public void setCoreCorporateRefundEndpoint(String coreCorporateRefundEndpoint) {
+        this.coreCorporateRefundEndpoint = coreCorporateRefundEndpoint;
+    }
+
+    public String getCorporateAccountNumber() {
+        return corporateAccountNumber;
+    }
+
+    public void setCorporateAccountNumber(String corporateAccountNumber) {
+        this.corporateAccountNumber = corporateAccountNumber;
+    }
+
+    public boolean isDispatchLocalCompletionEnabled() {
+        return dispatchLocalCompletionEnabled;
+    }
+
+    public void setDispatchLocalCompletionEnabled(boolean dispatchLocalCompletionEnabled) {
+        this.dispatchLocalCompletionEnabled = dispatchLocalCompletionEnabled;
+    }
+
+    public String getClearingExchange() {
+        return clearingExchange;
+    }
+
+    public void setClearingExchange(String clearingExchange) {
+        this.clearingExchange = clearingExchange;
+    }
+
+    public String getClearingRoutingKey() {
+        return clearingRoutingKey;
+    }
+
+    public void setClearingRoutingKey(String clearingRoutingKey) {
+        this.clearingRoutingKey = clearingRoutingKey;
     }
 }

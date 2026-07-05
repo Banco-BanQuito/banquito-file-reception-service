@@ -6,6 +6,7 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.JacksonJavaTypeMapper;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
@@ -53,8 +54,26 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Queue clearingOutboundQueue(FileReceptionProperties properties) {
+        return new Queue("clearing.outbound.queue", true);
+    }
+
+    @Bean
+    public DirectExchange clearingExchange(FileReceptionProperties properties) {
+        return new DirectExchange(properties.getClearingExchange(), true, false);
+    }
+
+    @Bean
+    public Binding clearingOutboundBinding(Queue clearingOutboundQueue, DirectExchange clearingExchange,
+                                           FileReceptionProperties properties) {
+        return BindingBuilder.bind(clearingOutboundQueue).to(clearingExchange).with(properties.getClearingRoutingKey());
+    }
+
+    @Bean
     public MessageConverter jsonMessageConverter() {
-        return new JacksonJsonMessageConverter();
+        JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();
+        converter.setTypePrecedence(JacksonJavaTypeMapper.TypePrecedence.INFERRED);
+        return converter;
     }
 
     @Bean

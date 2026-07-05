@@ -1,9 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.service.impl;
 
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
-import ec.edu.espe.switchpayments.switchbatch.config.PaymentLineTransport;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
-import ec.edu.espe.switchpayments.switchbatch.grpc.PaymentLineIngestionServiceGrpc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,9 +27,6 @@ class PaymentLinePublisherImplTest {
     private ObjectProvider<RabbitTemplate> rabbitTemplateProvider;
 
     @Mock
-    private ObjectProvider<PaymentLineIngestionServiceGrpc.PaymentLineIngestionServiceBlockingStub> stubProvider;
-
-    @Mock
     private RabbitTemplate rabbitTemplate;
 
     private FileReceptionProperties properties;
@@ -40,10 +35,9 @@ class PaymentLinePublisherImplTest {
     @BeforeEach
     void setUp() {
         properties = new FileReceptionProperties();
-        properties.setPaymentLineTransport(PaymentLineTransport.RABBITMQ);
         properties.setRabbitEnabled(true);
         when(rabbitTemplateProvider.getIfAvailable()).thenReturn(rabbitTemplate);
-        publisher = new PaymentLinePublisherImpl(properties, rabbitTemplateProvider, stubProvider);
+        publisher = new PaymentLinePublisherImpl(properties, rabbitTemplateProvider);
     }
 
     @Test
