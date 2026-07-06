@@ -10,7 +10,7 @@ import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentFileValidationRepository;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
 import ec.edu.espe.switchpayments.switchbatch.service.IPaymentLinePublisher;
-import ec.edu.espe.switchpayments.switchbatch.service.IRoutingCodeCatalogService;
+import ec.edu.espe.switchpayments.switchbatch.service.IBankCodeCatalogService;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,21 +28,21 @@ public class PaymentLinesReadyListener {
     private final IPaymentLinePublisher paymentLinePublisher;
     private final TaskScheduler taskScheduler;
     private final ICoreBankingClient coreBankingClient;
-    private final IRoutingCodeCatalogService routingCodeCatalogService;
+    private final IBankCodeCatalogService bankCodeCatalogService;
     private final PaymentFileValidationRepository validationRepository;
     private final PaymentBatchRepository paymentBatchRepository;
     private final BatchStatusLogRepository statusLogRepository;
     public PaymentLinesReadyListener(IPaymentLinePublisher paymentLinePublisher,
                                      TaskScheduler taskScheduler,
                                      ICoreBankingClient coreBankingClient,
-                                     IRoutingCodeCatalogService routingCodeCatalogService,
+                                     IBankCodeCatalogService bankCodeCatalogService,
                                      PaymentFileValidationRepository validationRepository,
                                      PaymentBatchRepository paymentBatchRepository,
                                      BatchStatusLogRepository statusLogRepository) {
         this.paymentLinePublisher = paymentLinePublisher;
         this.taskScheduler = taskScheduler;
         this.coreBankingClient = coreBankingClient;
-        this.routingCodeCatalogService = routingCodeCatalogService;
+        this.bankCodeCatalogService = bankCodeCatalogService;
         this.validationRepository = validationRepository;
         this.paymentBatchRepository = paymentBatchRepository;
         this.statusLogRepository = statusLogRepository;
@@ -52,33 +52,33 @@ public class PaymentLinesReadyListener {
     public void onPaymentLinesReady(PaymentLinesReadyEvent event) {
         ParsedBatch batch = event.batch();
         String batchId = event.batchId();
-        logger.info("[RF-02][ASYNC] Iniciando validación y fragmentación del lote {} ({} líneas declaradas).",
+        logger.info("[ASYNC] Iniciando validación y fragmentación del lote {} ({} líneas declaradas).",
                 batchId, batch.declaredRecords());
 
         boolean customerServiceActive = coreBankingClient.hasActiveMassPaymentService(
                 batch.clientRuc(), batch.serviceType());
         if (!customerServiceActive) {
-            logger.warn("[RF-02][ASYNC] Lote {} rechazado: servicio de pagos masivos inactivo para RUC {}.",
+            logger.warn("[ASYNC] Lote {} rechazado: servicio de pagos masivos inactivo para RUC {}.",
                     batchId, batch.clientRuc());
             updateBatchStatus(batchId, "REJECTED");
             saveValidation(batchId, batch, event.duplicateValid(), false);
             return;
         }
-        logger.info("[RF-02][ASYNC] Procesando líneas utilizando hilos concurrentes para optimizar la carga.");
+        logger.info("[ASYNC] Procesando líneas utilizando hilos concurrentes para optimizar la carga.");
         List<ParsedPaymentLine> acceptedLines = batch.lines();
         boolean sourceAccountValid = coreBankingClient.isFavoriteAccount(
                 batch.sourceAccountNumber(), batch.clientRuc());
         boolean fullyValid = sourceAccountValid && acceptedLines.size() == batch.lines().size();
         saveValidation(batchId, batch, event.duplicateValid(), fullyValid);
         if (!sourceAccountValid) {
-            logger.warn("[RF-02][ASYNC] Lote {} sin cuenta origen favorita válida. Ninguna línea publicada.", batchId);
+            logger.warn("[ASYNC] Lote {} sin cuenta origen favorita válida. Ninguna línea publicada.", batchId);
             return;
         }
         List<BatchLineMessage> messages = toMessages(batchId, batch, acceptedLines);
-        logger.info("[RF-02][ASYNC] Publicando {} líneas en RabbitMQ para lote {}.", messages.size(), batchId);
+        logger.info("[ASYNC] Publicando {} líneas en RabbitMQ para lote {}.", messages.size(), batchId);
 
         if (event.scheduledProcessAt().isAfter(Instant.now())) {
-            logger.info("[RF-02][ASYNC] Lote {} programado para {}. Publicación diferida.", batchId, event.scheduledProcessAt());
+            logger.info("[ASYNC] Lote {} programado para {}. Publicación diferida.", batchId, event.scheduledProcessAt());
             taskScheduler.schedule(
                     () -> paymentLinePublisher.publish(batchId, event.scheduledProcessAt(), messages),
                     event.scheduledProcessAt());
@@ -92,7 +92,7 @@ public class PaymentLinesReadyListener {
                         batchId,
                         line.lineNumber(),
                         line.routingCode(),
-                        routingCodeCatalogService.classify(line.routingCode()),
+                        bankCodeCatalogService.classify(line.routingCode()),
                         line.destinationAccountNumber(),
                         batch.sourceAccountNumber(),
                         batch.declaredRecords(),

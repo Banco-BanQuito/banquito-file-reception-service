@@ -1,8 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.controller;
 
 import ec.edu.espe.switchpayments.switchbatch.model.SwitchParameter;
-import ec.edu.espe.switchpayments.switchbatch.repository.SwitchParameterRepository;
-import ec.edu.espe.switchpayments.switchbatch.service.IRoutingCodeCatalogService;
+import ec.edu.espe.switchpayments.switchbatch.service.IBankCodeCatalogService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -21,15 +20,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping({"/api/v1/routing-codes", "/api/v2/payments/routing-codes"})
-public class RoutingCodeCatalogController {
+public class BankCodeCatalogController {
 
-    private final IRoutingCodeCatalogService catalogService;
-    private final SwitchParameterRepository repository;
+    private final IBankCodeCatalogService catalogService;
 
-    public RoutingCodeCatalogController(IRoutingCodeCatalogService catalogService,
-                                        SwitchParameterRepository repository) {
+    public BankCodeCatalogController(IBankCodeCatalogService catalogService) {
         this.catalogService = catalogService;
-        this.repository = repository;
     }
 
     @GetMapping
@@ -38,43 +34,39 @@ public class RoutingCodeCatalogController {
     }
 
     @GetMapping("/{code}/classify")
-    public ResponseEntity<RoutingClassificationResponse> classify(@PathVariable String code) {
+    public ResponseEntity<BankClassificationResponse> classify(@PathVariable String code) {
         String classification = catalogService.classify(code);
         if (classification == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Código de enrutamiento no reconocido: " + code);
+                    "Código bancario no reconocido: " + code);
         }
-        return ResponseEntity.ok(new RoutingClassificationResponse(code, classification));
+        return ResponseEntity.ok(new BankClassificationResponse(code, classification));
     }
 
     @PostMapping
-    public ResponseEntity<SwitchParameter> register(@Valid @RequestBody RoutingCodeRequest request) {
-        if (repository.existsById(request.code())) {
+    public ResponseEntity<SwitchParameter> register(@Valid @RequestBody BankCodeRequest request) {
+        if (catalogService.isValid(request.code())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "El código " + request.code() + " ya existe en el catálogo.");
         }
-        SwitchParameter param = new SwitchParameter();
-        param.setCode(request.code());
-        param.setName(request.name());
-        param.setValueString(request.classification());
-        param.setDataType("BANK_ROUTING_CODE");
-        param.setDescription(request.description());
-        return ResponseEntity.status(HttpStatus.CREATED).body(repository.save(param));
+        SwitchParameter parameter = catalogService.register(
+                request.code(), request.name(), request.classification(), request.description());
+        return ResponseEntity.status(HttpStatus.CREATED).body(parameter);
     }
 
     @DeleteMapping("/{code}")
     public ResponseEntity<Void> delete(@PathVariable String code) {
-        if (!repository.existsById(code)) {
+        if (!catalogService.isValid(code)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Código " + code + " no encontrado en el catálogo.");
         }
-        repository.deleteById(code);
+        catalogService.delete(code);
         return ResponseEntity.noContent().build();
     }
 
-    public record RoutingClassificationResponse(String code, String classification) {}
+    public record BankClassificationResponse(String code, String classification) {}
 
-    public record RoutingCodeRequest(
+    public record BankCodeRequest(
             @NotBlank @Size(max = 40) String code,
             @NotBlank @Size(max = 100) String name,
             @NotBlank @Pattern(regexp = "ON_US|OFF_US") String classification,

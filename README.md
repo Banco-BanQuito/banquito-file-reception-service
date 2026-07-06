@@ -1,323 +1,302 @@
 # BanQuito File Reception Service
 
-Microservicio Switch para recibir lotes de pagos masivos en archivo CSV/TXT desde el Portal Banca Web Empresas, expuesto por Kong mediante:
+Microservicio del Switch encargado de recibir archivos de pagos masivos, validar su estructura, registrar el lote y publicar cada línea en RabbitMQ. El mismo despliegue contiene consumidores que procesan las líneas On-Us, Off-Us e inválidas.
+
+La documentación adicional está disponible en:
+
+- [README-ARQUITECTURA.md](README-ARQUITECTURA.md): referencia detallada archivo por archivo.
+- [README-COMPONENTES.md](README-COMPONENTES.md): explicación directa de `controller`, `event`, `service/impl` y `dispatch`.
+
+Este proyecto ya no depende de `routing-service`. La palabra `routing` que aparece en el catálogo se refiere al código bancario y a la clasificación `ON_US` o `OFF_US`, no a otro microservicio.
+
+## Flujo general
 
 ```text
-POST /api/v1/payments/batches
+Cliente
+  |
+  | POST /api/v1/payments/batches
+  v
+FileReceptionController
+  v
+FileReceptionServiceImpl
+  |-- CsvBatchParserImpl
+  |-- BusinessDayServiceImpl
+  |-- CoreBankingClientImpl
+  |-- persistencia MySQL/MongoDB
+  v
+PaymentLinesReadyEvent
+  v
+PaymentLinesReadyListener
+  |-- clasifica el código bancario
+  v
+PaymentLinePublisherImpl
+  v
+RabbitMQ: payment.exchange
+  |-- onus    -> payment.lines.onus.queue
+  |-- offus   -> payment.lines.offus.queue
+  `-- invalid -> payment.lines.invalid.queue
+  v
+PaymentDispatchService
+  |-- On-Us  -> crédito en Account Core
+  |-- Off-Us -> clearing.exchange
+  `-- cierre -> tarifa, devolución, notificación y estado final
 ```
 
-El servicio valida el archivo, registra la recepcion del lote, guarda auditoria de validacion en PostgreSQL, guarda el lote en MongoDB y publica las lineas aceptadas por RabbitMQ o gRPC.
+RabbitMQ es el canal asíncrono entre la recepción y el procesamiento. `PaymentLinePublisherImpl` publica los mensajes y `PaymentDispatchService` los consume.
 
-## Funcionalidad
+## Organización principal
 
-- Recibe archivos `multipart/form-data`.
-- Soporta `ROUTING_CODE` por linea de detalle.
-- Valida catalogo de bancos en `switch_parameter`.
-- Codigo `001`: BanQuito / On-Us.
-- Otros codigos catalogados: Off-Us.
-- Codigo no reconocido: rechaza esa linea, no todo el lote.
-- Valida estructura, cabecera, pie, totales y suma de montos.
-- Registra resultados en `payment_file_validation`.
-- Detecta duplicados por SHA-256 del archivo en los ultimos 30 dias.
-- Responde `202 Accepted` inmediatamente si la validacion del lote es correcta.
-- Publica lineas aceptadas por RabbitMQ o gRPC segun `APP_PAYMENT_LINE_TRANSPORT`.
-- Aplica horario de corte 18:00 y agenda para el siguiente dia habil si llega despues del corte.
-- Consulta feriados en Core Banking mediante `CORE_HOLIDAY_ENDPOINT`; si Core no responde, usa regla lunes-viernes.
-- Valida la cuenta matriz contra la cuenta favorita del cliente mediante `CORE_FAVORITE_ACCOUNT_ENDPOINT`.
-- Expone `GET /actuator/health`.
-
-## Endpoint Principal
-
-```http
-POST /api/v1/payments/batches
-Content-Type: multipart/form-data
+```text
+controller/          API REST de recepción, salud y catálogo bancario
+service/             Contratos de la capa de servicio
+service/impl/        Implementaciones de recepción y publicación
+event/               Evento interno que inicia el procesamiento asíncrono
+dispatch/            Consumidores RabbitMQ y procesamiento financiero
+config/              RabbitMQ, HTTP, gRPC, scheduling y propiedades
+model/ y dto/        Entidades persistentes y objetos de transferencia
+repository/          Repositorios MySQL y MongoDB
 ```
 
-Campos form-data:
+## Controladores
 
-| Campo | Tipo | Descripcion |
+### FileReceptionController
+
+Expone la entrada principal del microservicio.
+
+| Método | Ruta | Responsabilidad |
 |---|---|---|
-| `file` | File | Archivo `.csv` o `.txt` |
-| `serviceType` | Text | Tipo de servicio, por ejemplo `NOMINA` |
-| `clientRuc` | Text | RUC del cliente empresa |
+| `POST` | `/api/v1/payments/batches` | Recibe el archivo y devuelve `202 Accepted` |
+| `POST` | `/api/v2/payments/batches` | Alias versionado del endpoint anterior |
+| `GET` | `/api/v1/payments/health` | Salud básica del servicio |
+| `GET` | `/api/v2/payments/health` | Alias versionado de salud |
 
-Respuesta exitosa:
+El endpoint de recepción espera `multipart/form-data`:
 
-```json
-{
-  "batch_id": "uuid",
-  "status": "RECEIVED",
-  "message": "Lote recibido, procesando en segundo plano"
-}
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `file` | Archivo | CSV o TXT del lote |
+| `serviceType` | Texto | Tipo de servicio, por ejemplo `NOMINA` |
+| `clientRuc` | Texto | RUC de la empresa |
+
+### BankCodeCatalogController
+
+Administra el catálogo local de códigos bancarios. No consume ni representa al antiguo `routing-service`.
+
+| Método | Ruta | Responsabilidad |
+|---|---|---|
+| `GET` | `/api/v1/routing-codes` | Lista los códigos registrados |
+| `GET` | `/api/v2/payments/routing-codes` | Alias de la lista |
+| `GET` | `/api/v1/routing-codes/{code}/classify` | Devuelve `ON_US` u `OFF_US` |
+| `POST` | `/api/v1/routing-codes` | Registra un código bancario |
+| `DELETE` | `/api/v1/routing-codes/{code}` | Elimina un código |
+
+Ejemplo conceptual:
+
+```text
+001 -> Banco BanQuito -> ON_US
+002 -> Otro banco     -> OFF_US
 ```
 
-Errores relevantes:
+### PaymentBatchStatusController
 
-| HTTP | Caso |
-|---|---|
-| `400` | Archivo invalido, cabecera/pie descuadrados, monto incorrecto |
-| `409` | Lote duplicado |
+Pertenece al paquete `dispatch` porque consulta el estado producido durante el procesamiento de las líneas.
 
-## Formato CSV/TXT
+| Método | Ruta | Responsabilidad |
+|---|---|---|
+| `GET` | `/api/v2/payments/batches/{batchId}/status` | Consulta contadores, montos y estado final del lote |
 
-El delimitador por defecto es coma `,`.
+### ApiExceptionHandler
 
-Cabecera:
+Centraliza respuestas para parámetros multipart faltantes y lotes duplicados. Un duplicado devuelve HTTP `409`.
+
+## Contratos de servicio
+
+Las interfaces del paquete `service` definen qué necesita el caso de uso sin acoplar los controladores a implementaciones concretas.
+
+### IFileReceptionService
+
+Contrato principal de recepción. Recibe el archivo, el tipo de servicio y el RUC; devuelve la identificación y programación del lote.
+
+Implementación: `FileReceptionServiceImpl`.
+
+### ICsvBatchParser
+
+Convierte el contenido CSV/TXT en un `ParsedBatch`. Valida cabecera, detalles, pie, número de registros y totales monetarios.
+
+Implementación: `CsvBatchParserImpl`.
+
+### IBusinessDayService
+
+Determina si una fecha es hábil y calcula el siguiente día hábil para lotes recibidos después de la hora de corte.
+
+Implementación: `BusinessDayServiceImpl`.
+
+### ICoreBankingClient
+
+Define las operaciones REST requeridas del Account Core:
+
+- Validar cuentas.
+- Consultar la cuenta favorita de la empresa.
+- Confirmar que el servicio de pagos masivos esté activo.
+- Consultar saldo suficiente.
+- Ejecutar crédito masivo On-Us.
+- Ejecutar débito corporativo.
+- Ejecutar devolución corporativa.
+
+Implementación: `CoreBankingClientImpl`.
+
+### IBankCodeCatalogService
+
+Consulta el catálogo local para validar un código bancario y clasificarlo como `ON_US` o `OFF_US`.
+
+Implementación: `BankCodeCatalogServiceImpl`.
+
+### IPaymentLinePublisher
+
+Publica en RabbitMQ las líneas ya validadas y clasificadas.
+
+Implementación: `PaymentLinePublisherImpl`.
+
+## Implementaciones de servicio
+
+### FileReceptionServiceImpl
+
+Orquesta la recepción inicial:
+
+1. Valida que el archivo exista y tenga un formato permitido.
+2. Ejecuta `CsvBatchParserImpl`.
+3. Comprueba totales y saldo de la cuenta de origen.
+4. Detecta duplicados mediante el hash del archivo.
+5. Calcula la fecha de procesamiento según la hora de corte.
+6. Persiste el lote y su historial de estado.
+7. Publica `PaymentLinesReadyEvent`.
+8. Devuelve la respuesta HTTP sin esperar el procesamiento financiero completo.
+
+### CsvBatchParserImpl
+
+Interpreta el archivo con esta estructura:
 
 ```text
 ruc,servicio,fecha_generacion,cuenta_matriz,total_registros,monto_total
-```
-
-Detalle:
-
-```text
 secuencial,routing_code,identificacion,nombre,cuenta_destino,monto,referencia,email
-```
-
-Pie:
-
-```text
 codigo_seguridad,total_registros,monto_total
 ```
 
-Ejemplo:
+### BusinessDayServiceImpl
 
-```csv
-0912345678,NOMINA,2026-06-01T14:00:00,1234567890,2,30.00
-1,001,1757158215,Ana Perez,9876543210,10.00,REF-1,ana@example.com
-2,002,1757158216,Luis Mora,9876543211,20.00,REF-2,luis@example.com
-SEC-1,2,30.00
-```
+Consulta el calendario del Core. Si el Core no está disponible, aplica la regla local de lunes a viernes.
 
-## Persistencia
+### CoreBankingClientImpl
 
-PostgreSQL:
+Implementa con HTTP las operaciones declaradas en `ICoreBankingClient`. El comportamiento puede desactivarse localmente mediante `APP_CORE_VALIDATION_ENABLED=false`.
 
-- `switch_parameter`
-- `payment_file_validation`
-- `batch_status_log`
+### BankCodeCatalogServiceImpl
 
-MongoDB:
+Lee `switch_parameter` y devuelve la clasificación asociada a cada banco. Esta clasificación determina la routing key utilizada al publicar en RabbitMQ.
 
-- Base: `file_reception`
-- Coleccion: `payment_batch`
+### PaymentLinesReadyListener
 
-El servicio crea automaticamente la base PostgreSQL configurada en `POSTGRES_DB` si no existe, usando `POSTGRES_MAINTENANCE_DB=postgres`. El usuario PostgreSQL debe tener permiso `CREATEDB`.
+Escucha el evento interno `PaymentLinesReadyEvent`. Valida el servicio de pagos masivos y la cuenta favorita, transforma las líneas en `BatchLineMessage` y solicita su publicación inmediata o programada.
 
-MongoDB crea la base cuando se crea la coleccion o se inserta el primer documento. El servicio inicializa la coleccion `payment_batch` al arrancar.
+### PaymentLinePublisherImpl
 
-## Variables De Entorno
+Usa `RabbitTemplate.convertAndSend()` para publicar cada línea en `payment.exchange`.
 
-El archivo de referencia esta en:
+| Clasificación | Routing key | Cola |
+|---|---|---|
+| `ON_US` | `onus` | `payment.lines.onus.queue` |
+| `OFF_US` | `offus` | `payment.lines.offus.queue` |
+| No reconocida | `invalid` | `payment.lines.invalid.queue` |
+
+No existe un transporte alternativo hacia `routing-service` ni una llamada gRPC para publicar líneas.
+
+## Módulo dispatch
+
+`dispatch` contiene la etapa posterior a RabbitMQ. No es otro microservicio: forma parte de esta misma aplicación.
+
+### PaymentDispatchService
+
+Es el consumidor de las tres colas mediante `@RabbitListener`:
+
+- `processOnUsLine`: consume pagos On-Us y solicita el crédito al Account Core.
+- `processOffUsLine`: consume pagos Off-Us y los publica en `clearing.exchange`.
+- `processInvalidLine`: registra como rechazada una línea cuyo código no fue reconocido.
+
+Además, coordina:
+
+- Idempotencia por lote y número de línea.
+- Débito inicial del total declarado.
+- Persistencia de detalles y contadores en MongoDB.
+- Cálculo de tarifa mediante `TariffGrpcClient`.
+- Devolución del monto rechazado.
+- Notificación mediante `NotificationGrpcClient`.
+- Cierre del lote como completado, completado con novedades o fallido.
+
+RabbitMQ solo transporta mensajes. `PaymentDispatchService` es necesario porque actúa como consumidor y ejecuta el trabajo asociado a cada mensaje.
+
+### Clientes dispatch
+
+- `TariffGrpcClient`: consulta la tarifa del lote al servicio de tarifas mediante gRPC.
+- `NotificationGrpcClient`: solicita el envío de notificaciones mediante gRPC.
+
+### Persistencia dispatch
+
+- `PaymentDispatchBatchRepository`: estado agregado del lote.
+- `PaymentDispatchDetailRepository`: resultado individual de cada línea.
+
+## RabbitMQ
+
+La topología se declara en `RabbitMqConfig`:
 
 ```text
-.env.example
-```
+payment.exchange (direct)
+  |-- onus    -> payment.lines.onus.queue
+  |-- offus   -> payment.lines.offus.queue
+  `-- invalid -> payment.lines.invalid.queue
 
-Para correr local, crea:
-
-```text
-.env
+clearing.exchange (direct)
+  `-- clearing.outbound -> clearing.outbound.queue
 ```
 
 Variables principales:
 
 ```properties
-SERVER_PORT=8084
-
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=file_reception
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=123
-POSTGRES_AUTO_CREATE_DB=true
-POSTGRES_MAINTENANCE_DB=postgres
-
-MONGO_URI=mongodb://localhost:27017/file_reception
-
-APP_PAYMENT_LINE_TRANSPORT=rabbitmq
-APP_RABBIT_ENABLED=false
-MANAGEMENT_HEALTH_RABBIT_ENABLED=false
-
-APP_CORE_VALIDATION_ENABLED=false
-CORE_BASE_URL=http://localhost:8080
-CORE_HOLIDAY_ENDPOINT=/api/v2/calendar/holidays/check
-CORE_ACCOUNT_VALIDATION_ENDPOINT=/api/v1/accounts/validate
-CORE_FAVORITE_ACCOUNT_ENDPOINT=/api/v2/accounts/customer/{customerId}/favorite
-CORE_MASS_PAYMENT_SERVICE_ENDPOINT=/api/v1/customers/mass-payments/active
-```
-
-Para enviar las lineas por gRPC en lugar de RabbitMQ:
-
-```properties
-APP_PAYMENT_LINE_TRANSPORT=grpc
-APP_GRPC_HOST=localhost
-APP_GRPC_PORT=9090
-APP_GRPC_DEADLINE_SECONDS=10
-```
-
-Para integracion real con Core/Party/Rabbit:
-
-```properties
 APP_RABBIT_ENABLED=true
-MANAGEMENT_HEALTH_RABBIT_ENABLED=true
-APP_CORE_VALIDATION_ENABLED=true
-CORE_BASE_URL=http://localhost:8080
-CORE_HOLIDAY_ENDPOINT=/api/v2/calendar/holidays/check
-CORE_ACCOUNT_VALIDATION_ENDPOINT=/api/v1/accounts/validate
-CORE_FAVORITE_ACCOUNT_ENDPOINT=/api/v2/accounts/customer/{customerId}/favorite
-CORE_MASS_PAYMENT_SERVICE_ENDPOINT=/api/v1/customers/mass-payments/active
+APP_RABBIT_QUEUE_ONUS=payment.lines.onus.queue
+APP_RABBIT_QUEUE_OFFUS=payment.lines.offus.queue
+APP_RABBIT_QUEUE_INVALID=payment.lines.invalid.queue
+RABBITMQ_HOST=localhost
+RABBITMQ_PORT=5672
+RABBITMQ_USERNAME=guest
+RABBITMQ_PASSWORD=guest
+RABBITMQ_VHOST=/
+RABBITMQ_CLEARING_EXCHANGE=clearing.exchange
+RABBITMQ_CLEARING_ROUTING_KEY=clearing.outbound
 ```
 
-Endpoints esperados en Core:
+## Persistencia
 
-| Variable | Uso |
-|---|---|
-| `CORE_HOLIDAY_ENDPOINT` | Consulta si una fecha es dia habil. Recibe `date` como query param. |
-| `CORE_ACCOUNT_VALIDATION_ENDPOINT` | Valida cada cuenta destino. Recibe `accountNumber` y `clientRuc` como query params. |
-| `CORE_FAVORITE_ACCOUNT_ENDPOINT` | Consulta la cuenta favorita del cliente usando `{customerId}` en la ruta. |
-| `CORE_MASS_PAYMENT_SERVICE_ENDPOINT` | Valida si el cliente tiene activo el servicio de pagos masivos. Recibe `clientRuc` y `serviceType` como query params. |
+MySQL almacena información paramétrica y de validación:
 
-## Ejecutar Local
+- `switch_parameter`
+- `payment_file_validation`
+- `batch_status_log`
 
-Desde la raiz del microservicio:
+MongoDB almacena la recepción, el estado agregado y el detalle del procesamiento de los lotes.
+
+## Ejecución local
 
 ```powershell
-cd "C:\Users\User\Desktop\swith con microservicios7\banquito-file-reception-service"
 .\mvnw.cmd spring-boot:run
 ```
 
-Health:
+Salud:
 
 ```powershell
 Invoke-RestMethod http://localhost:8084/actuator/health
 ```
 
-## Ejecutar Con Docker
-
-El `Dockerfile` esta en la raiz del microservicio y construye el proyecto Maven directamente.
-
-Desde `banquito-file-reception-service`:
-
-```powershell
-docker build -t banquito-file-reception-service .
-```
-
-Si PostgreSQL, MongoDB y RabbitMQ corren en tu maquina host, usa `host.docker.internal` dentro del contenedor:
-
-```powershell
-docker run --rm --name banquito-file-reception-service `
-  -p 8084:8084 `
-  -e POSTGRES_HOST=host.docker.internal `
-  -e MONGO_URI=mongodb://host.docker.internal:27017/file_reception `
-  -e APP_RABBIT_ENABLED=false `
-  -e MANAGEMENT_HEALTH_RABBIT_ENABLED=false `
-  -e APP_CORE_VALIDATION_ENABLED=false `
-  banquito-file-reception-service
-```
-
-## Ejecutar Todo Con Docker Compose
-
-El repositorio incluye un `docker-compose.yml` que levanta:
-
-- PostgreSQL
-- MongoDB
-- RabbitMQ con consola web
-- `banquito-file-reception-service`
-
-Desde la raiz del repositorio:
-
-```powershell
-cd "C:\Users\User\Desktop\swith con microservicios7\banquito-file-reception-service"
-docker compose up --build
-```
-
-Servicios expuestos:
-
-| Servicio | URL / Puerto |
-|---|---|
-| Microservicio | `http://localhost:8084` |
-| Health | `http://localhost:8084/actuator/health` |
-| PostgreSQL | `localhost:5432` |
-| MongoDB | `mongodb://localhost:27017/file_reception` |
-| RabbitMQ AMQP | `localhost:5672` |
-| RabbitMQ Console | `http://localhost:15672` |
-
-Credenciales RabbitMQ:
-
-```text
-guest / guest
-```
-
-Credenciales PostgreSQL:
-
-```text
-postgres / 123
-```
-
-En Docker Compose se usa:
-
-```properties
-APP_CORE_VALIDATION_ENABLED=false
-APP_RABBIT_ENABLED=true
-MANAGEMENT_HEALTH_RABBIT_ENABLED=true
-```
-
-Esto permite probar el flujo completo con RabbitMQ real, pero sin depender de Core/Party Service.
-
-Para apagar y conservar datos:
-
-```powershell
-docker compose down
-```
-
-Para apagar y borrar volumenes de PostgreSQL, MongoDB y RabbitMQ:
-
-```powershell
-docker compose down -v
-```
-
-## RabbitMQ Local
-
-Con Docker Desktop encendido:
-
-```powershell
-docker run -it --rm --name rabbitmq `
-  -p 5672:5672 `
-  -p 15672:15672 `
-  rabbitmq:4-management
-```
-
-Consola web:
-
-```text
-http://localhost:15672
-```
-
-Credenciales:
-
-```text
-guest / guest
-```
-
-Si no vas a usar Rabbit localmente:
-
-```properties
-APP_RABBIT_ENABLED=false
-MANAGEMENT_HEALTH_RABBIT_ENABLED=false
-```
-
-## Pruebas Manuales
-
-Archivos de prueba:
-
-```text
-test-files/batch-valid.csv
-test-files/batch-invalid-routing.csv
-test-files/batch-bad-amount.csv
-```
-
-Lote valido:
+Recepción de un lote:
 
 ```powershell
 curl.exe -X POST "http://localhost:8084/api/v1/payments/batches" `
@@ -326,50 +305,37 @@ curl.exe -X POST "http://localhost:8084/api/v1/payments/batches" `
   -F "clientRuc=0912345678"
 ```
 
-Duplicado:
+## Docker Compose
+
+El `docker-compose.yml` incluye PostgreSQL, MongoDB, RabbitMQ y el microservicio:
 
 ```powershell
-# Ejecutar de nuevo el request del lote valido.
-# Debe responder HTTP 409 con "Lote duplicado".
+docker compose up --build
 ```
 
-Routing invalido:
+Existe una inconsistencia pendiente: la aplicación vigente usa el driver y una URL JDBC de MySQL, mientras el Compose local todavía configura PostgreSQL mediante variables `POSTGRES_*`. Antes de utilizarlo como entorno completo debe reemplazarse PostgreSQL por MySQL o restaurarse el driver y la configuración PostgreSQL en la aplicación. MongoDB y RabbitMQ sí coinciden con la configuración actual.
+
+| Componente | Dirección |
+|---|---|
+| API | `http://localhost:8084` |
+| Health | `http://localhost:8084/actuator/health` |
+| RabbitMQ | `localhost:5672` |
+| Consola RabbitMQ | `http://localhost:15672` |
+| MongoDB | `mongodb://localhost:27017/file_reception` |
+
+## Pruebas
 
 ```powershell
-curl.exe -X POST "http://localhost:8084/api/v1/payments/batches" `
-  -F "file=@test-files/batch-invalid-routing.csv" `
-  -F "serviceType=NOMINA" `
-  -F "clientRuc=0912345678"
+.\mvnw.cmd test
 ```
 
-Monto descuadrado:
-
-```powershell
-curl.exe -X POST "http://localhost:8084/api/v1/payments/batches" `
-  -F "file=@test-files/batch-bad-amount.csv" `
-  -F "serviceType=NOMINA" `
-  -F "clientRuc=0912345678"
-```
-
-## Postman
-
-Coleccion:
+Archivos manuales disponibles:
 
 ```text
-postman/switch-payment-batches.postman_collection.json
+test-files/batch-valid.csv
+test-files/batch-invalid-routing.csv
+test-files/batch-bad-amount.csv
+test-files/batch-grpc-offus.csv
 ```
 
-Importala en Postman y valida que el campo `file` este como tipo `File`. Si Postman no resuelve la ruta relativa, selecciona manualmente los archivos desde `test-files`.
-
-## Notas De Desarrollo
-
-- `APP_CORE_VALIDATION_ENABLED=false` permite probar local sin Core/Party Service.
-- Cuando Core esta desactivado, la validacion de cuentas y servicio masivo se considera valida si los campos vienen informados.
-- Cuando Core esta desactivado, el calendario de dias habiles usa regla lunes-viernes.
-- Cuando Core esta activo, el calendario usa `CORE_HOLIDAY_ENDPOINT` y cae a regla lunes-viernes si la consulta falla.
-- Cuando Core esta activo, la cuenta matriz del archivo debe coincidir con la cuenta favorita retornada por `CORE_FAVORITE_ACCOUNT_ENDPOINT`.
-- Despues de las 18:00 el lote queda con `scheduled_process_at` del siguiente dia habil.
-- `payment_batch.status` inicia como `RECEIVED`.
-- RabbitMQ publica en la cola `payment.lines.queue`.
-- gRPC usa el contrato `src/main/proto/payment_line_ingestion.proto`.
-- Para activar gRPC, configura `APP_PAYMENT_LINE_TRANSPORT=grpc` y apunta `APP_GRPC_HOST` / `APP_GRPC_PORT` al microservicio receptor.
+La colección Postman está en `postman/switch-payment-batches.postman_collection.json`.

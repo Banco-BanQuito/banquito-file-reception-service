@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7e5a0765-f5fb-4a5d-9a02-6047f15c0c1f",
     "name": "Switch Payment Batches",
-    "description": "Pruebas RF-01/RF-02 para POST /api/v1/payments/batches.",
+    "description": "Pruebas para POST /api/v1/payments/batches.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

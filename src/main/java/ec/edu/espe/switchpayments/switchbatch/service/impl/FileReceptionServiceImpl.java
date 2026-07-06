@@ -93,7 +93,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
             throw new DuplicateBatchException("Lote duplicado");
         }
 
-        logger.info("[RF-02] Lote {} aceptado estructuralmente ({} líneas). Publicando evento para procesamiento asíncrono.",
+        logger.info("Lote {} aceptado estructuralmente ({} líneas). Publicando evento para procesamiento asíncrono.",
                 batchId, batch.declaredRecords());
         eventPublisher.publishEvent(new PaymentLinesReadyEvent(batchId, schedule.scheduledProcessAt(), batch, duplicateValid));
 
