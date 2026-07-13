@@ -45,7 +45,7 @@ public class CsvBatchParserImpl implements ICsvBatchParser {
         String[] footer = split(lines.get(lines.size() - 1));
 
         if (header.length != 6) {
-            throw new IllegalArgumentException("Cabecera invalida: se esperan 6 campos [ruc,servicio,fecha,cuenta_matriz,total_registros,monto_total]");
+            throw new IllegalArgumentException("Cabecera invalida: se esperan 6 campos obligatorios [ruc,servicio,fecha,cuenta_matriz,total_registros,monto_total]");
         }
         if (footer.length != 3) {
             throw new IllegalArgumentException("Pie invalido: se esperan 3 campos [codigo_seguridad, registros, monto]");
