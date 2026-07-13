@@ -75,7 +75,7 @@ public class PaymentLinesReadyListener {
             return;
         }
         List<BatchLineMessage> messages = toMessages(batchId, batch, acceptedLines);
-        logger.info("[ASYNC] Publicando {} líneas en RabbitMQ para lote {}.", messages.size(), batchId);
+        logger.info("[ASYNC] Publicando un total de {} líneas en RabbitMQ para lote {}.", messages.size(), batchId);
 
         if (event.scheduledProcessAt().isAfter(Instant.now())) {
             logger.info("[ASYNC] Lote {} programado para {}. Publicación diferida.", batchId, event.scheduledProcessAt());
