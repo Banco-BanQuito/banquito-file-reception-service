@@ -14,5 +14,6 @@ public class BatchApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(BatchApplication.class, args);
+        System.out.println("CI/CD backend validation: file-reception-service started");
     }
 }
