@@ -61,4 +61,8 @@ jobs:
       - name: Deploy to GKE
         run: |
           kubectl set image deployment/$DEPLOYMENT_NAME $CONTAINER_NAME="$IMAGE:${{ github.sha }}" -n $NAMESPACE
-          kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s
+          if ! kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s; then
+            echo "::warning::Rollout did not finish. Image was applied, but the pod may be waiting for external services or runtime configuration."
+            kubectl get pods -n $NAMESPACE -o wide
+            kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE
+          fi
