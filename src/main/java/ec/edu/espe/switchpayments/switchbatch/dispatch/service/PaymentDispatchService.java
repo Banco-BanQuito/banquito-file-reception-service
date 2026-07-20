@@ -13,10 +13,9 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentDetail;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchDetailRepository;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
+import ec.edu.espe.switchpayments.switchbatch.service.impl.PubSubClearingPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -53,7 +52,7 @@ public class PaymentDispatchService {
     private final ICoreBankingClient coreBankingClient;
     private final TariffGrpcClient tariffClient;
     private final NotificationGrpcClient notificationClient;
-    private final RabbitTemplate rabbitTemplate;
+    private final PubSubClearingPublisher clearingPublisher;
     private final FileReceptionProperties properties;
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> debitOutcomes = new ConcurrentHashMap<>();
@@ -63,18 +62,17 @@ public class PaymentDispatchService {
                                    ICoreBankingClient coreBankingClient,
                                    TariffGrpcClient tariffClient,
                                    NotificationGrpcClient notificationClient,
-                                   RabbitTemplate rabbitTemplate,
+                                   PubSubClearingPublisher clearingPublisher,
                                    FileReceptionProperties properties) {
         this.detailRepository = detailRepository;
         this.mongoTemplate = mongoTemplate;
         this.coreBankingClient = coreBankingClient;
         this.tariffClient = tariffClient;
         this.notificationClient = notificationClient;
-        this.rabbitTemplate = rabbitTemplate;
+        this.clearingPublisher = clearingPublisher;
         this.properties = properties;
     }
 
-    @RabbitListener(queues = "${app.file-reception.rabbit-queue-onus}", concurrency = "5-20")
     public void processOnUsLine(BatchLineMessage message) {
         log.info("Received ON_US payment line: batchId={}, lineNumber={}", message.batchId(), message.lineNumber());
         PaymentDetail detail = prepareLine(message);
@@ -97,7 +95,6 @@ public class PaymentDispatchService {
         finalizeLine(message, detail, success, errorCode, errorMessage, "PROCESSED");
     }
 
-    @RabbitListener(queues = "${app.file-reception.rabbit-queue-offus}", concurrency = "5-20")
     public void processOffUsLine(BatchLineMessage message) {
         log.info("Received OFF_US payment line: batchId={}, lineNumber={}", message.batchId(), message.lineNumber());
         PaymentDetail detail = prepareLine(message);
@@ -110,7 +107,7 @@ public class PaymentDispatchService {
         String errorMessage = null;
         try {
             OffUsClearingMessage clearingMessage = adaptForClearingHouse(message, detail);
-            rabbitTemplate.convertAndSend(properties.getClearingExchange(), properties.getClearingRoutingKey(), clearingMessage);
+            clearingPublisher.publish(clearingMessage);
             success = true;
         } catch (Exception e) {
             log.error("Off-Us routing error batchId={} line={}: {}", message.batchId(), message.lineNumber(), e.getMessage());
@@ -121,7 +118,6 @@ public class PaymentDispatchService {
         finalizeLine(message, detail, success, errorCode, errorMessage, "CLEARED");
     }
 
-    @RabbitListener(queues = "${app.file-reception.rabbit-queue-invalid}", concurrency = "5-20")
     public void processInvalidLine(BatchLineMessage message) {
         log.warn("Invalid routing code '{}' for batchId={}", message.routingCode(), message.batchId());
         PaymentDetail detail = prepareLine(message);

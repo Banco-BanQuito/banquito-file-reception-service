@@ -34,8 +34,16 @@ public class FileReceptionProperties {
     private boolean forceBusinessDay = false;
     private String corporateAccountNumber = "0000000000";
     private boolean dispatchLocalCompletionEnabled = false;
-    private String clearingExchange = "clearing.exchange";
-    private String clearingRoutingKey = "clearing.outbound";
+    private String pubsubProjectId = "project-47695a8e-7cb2-4352-af2";
+    private String pubsubPaymentLinesTopic = "banquito-payment-lines";
+    private String pubsubClearingEventsTopic = "banquito-clearing-events";
+    private String pubsubPaymentLinesOnUsSubscription = "payment-lines-onus-sub";
+    private String pubsubPaymentLinesOffUsSubscription = "payment-lines-offus-sub";
+    private String pubsubPaymentLinesInvalidSubscription = "payment-lines-invalid-sub";
+    private String pubsubRoutingKeyOnUs = "onus";
+    private String pubsubRoutingKeyOffUs = "offus";
+    private String pubsubRoutingKeyInvalid = "invalid";
+    private String pubsubRoutingKeyClearingOutbound = "clearing.outbound";
 
     public int getDuplicateWindowDays() {
         return duplicateWindowDays;
@@ -269,19 +277,83 @@ public class FileReceptionProperties {
         this.dispatchLocalCompletionEnabled = dispatchLocalCompletionEnabled;
     }
 
-    public String getClearingExchange() {
-        return clearingExchange;
+    public String getPubsubProjectId() {
+        return pubsubProjectId;
     }
 
-    public void setClearingExchange(String clearingExchange) {
-        this.clearingExchange = clearingExchange;
+    public void setPubsubProjectId(String pubsubProjectId) {
+        this.pubsubProjectId = pubsubProjectId;
     }
 
-    public String getClearingRoutingKey() {
-        return clearingRoutingKey;
+    public String getPubsubPaymentLinesTopic() {
+        return pubsubPaymentLinesTopic;
     }
 
-    public void setClearingRoutingKey(String clearingRoutingKey) {
-        this.clearingRoutingKey = clearingRoutingKey;
+    public void setPubsubPaymentLinesTopic(String pubsubPaymentLinesTopic) {
+        this.pubsubPaymentLinesTopic = pubsubPaymentLinesTopic;
+    }
+
+    public String getPubsubClearingEventsTopic() {
+        return pubsubClearingEventsTopic;
+    }
+
+    public void setPubsubClearingEventsTopic(String pubsubClearingEventsTopic) {
+        this.pubsubClearingEventsTopic = pubsubClearingEventsTopic;
+    }
+
+    public String getPubsubPaymentLinesOnUsSubscription() {
+        return pubsubPaymentLinesOnUsSubscription;
+    }
+
+    public void setPubsubPaymentLinesOnUsSubscription(String pubsubPaymentLinesOnUsSubscription) {
+        this.pubsubPaymentLinesOnUsSubscription = pubsubPaymentLinesOnUsSubscription;
+    }
+
+    public String getPubsubPaymentLinesOffUsSubscription() {
+        return pubsubPaymentLinesOffUsSubscription;
+    }
+
+    public void setPubsubPaymentLinesOffUsSubscription(String pubsubPaymentLinesOffUsSubscription) {
+        this.pubsubPaymentLinesOffUsSubscription = pubsubPaymentLinesOffUsSubscription;
+    }
+
+    public String getPubsubPaymentLinesInvalidSubscription() {
+        return pubsubPaymentLinesInvalidSubscription;
+    }
+
+    public void setPubsubPaymentLinesInvalidSubscription(String pubsubPaymentLinesInvalidSubscription) {
+        this.pubsubPaymentLinesInvalidSubscription = pubsubPaymentLinesInvalidSubscription;
+    }
+
+    public String getPubsubRoutingKeyOnUs() {
+        return pubsubRoutingKeyOnUs;
+    }
+
+    public void setPubsubRoutingKeyOnUs(String pubsubRoutingKeyOnUs) {
+        this.pubsubRoutingKeyOnUs = pubsubRoutingKeyOnUs;
+    }
+
+    public String getPubsubRoutingKeyOffUs() {
+        return pubsubRoutingKeyOffUs;
+    }
+
+    public void setPubsubRoutingKeyOffUs(String pubsubRoutingKeyOffUs) {
+        this.pubsubRoutingKeyOffUs = pubsubRoutingKeyOffUs;
+    }
+
+    public String getPubsubRoutingKeyInvalid() {
+        return pubsubRoutingKeyInvalid;
+    }
+
+    public void setPubsubRoutingKeyInvalid(String pubsubRoutingKeyInvalid) {
+        this.pubsubRoutingKeyInvalid = pubsubRoutingKeyInvalid;
+    }
+
+    public String getPubsubRoutingKeyClearingOutbound() {
+        return pubsubRoutingKeyClearingOutbound;
+    }
+
+    public void setPubsubRoutingKeyClearingOutbound(String pubsubRoutingKeyClearingOutbound) {
+        this.pubsubRoutingKeyClearingOutbound = pubsubRoutingKeyClearingOutbound;
     }
 }
