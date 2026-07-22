@@ -1,28 +1,16 @@
-name: CI/CD GKE
+name: CI Compile Check
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
-
-env:
-  PROJECT_ID: project-47695a8e-7cb2-4352-af2
-  ARTIFACT_REGION: us-central1
-  ARTIFACT_REPOSITORY: banquito
-  GKE_CLUSTER: banquito-cluster-east
-  GKE_LOCATION: us-east1
-  NAMESPACE: banquito-switch
-  SERVICE: file-reception-service
 
 jobs:
-  build:
-    name: Build
+  compile:
+    name: Compile package
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,42 +22,5 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Package
-        run: |
-          chmod +x ./mvnw
-          ./mvnw -q -Dmaven.test.skip=true clean package
-
-      - name: Authenticate to Google Cloud
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/69503932816/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
-          service_account: github-actions-gke@project-47695a8e-7cb2-4352-af2.iam.gserviceaccount.com
-
-      - name: Set up Google Cloud SDK
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Build and push image
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          gcloud auth configure-docker $ARTIFACT_REGION-docker.pkg.dev --quiet
-          IMAGE="$ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REPOSITORY/$SERVICE"
-          docker build -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" .
-          docker push "$IMAGE:$GITHUB_SHA"
-          docker push "$IMAGE:latest"
-
-      - name: Get GKE credentials
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: ${{ env.GKE_CLUSTER }}
-          location: ${{ env.GKE_LOCATION }}
-          project_id: ${{ env.PROJECT_ID }}
-
-      - name: Deploy to GKE
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          IMAGE="$ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REPOSITORY/$SERVICE:$GITHUB_SHA"
-          kubectl set image "deployment/$SERVICE" "$SERVICE=$IMAGE" -n "$NAMESPACE"
-          kubectl rollout status "deployment/$SERVICE" -n "$NAMESPACE" --timeout=300s
+      - name: Build package
+        run: mvn -q -Dmaven.test.skip=true package

@@ -33,7 +33,7 @@ jobs:
           java-version: "21"
           cache: maven
       - name: Build JAR
-        run: mvn -q -DskipTests package
+        run: mvn -q -Dmaven.test.skip=true package
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -61,8 +61,4 @@ jobs:
       - name: Deploy to GKE
         run: |
           kubectl set image deployment/$DEPLOYMENT_NAME $CONTAINER_NAME="$IMAGE:${{ github.sha }}" -n $NAMESPACE
-          if ! kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s; then
-            echo "::warning::Rollout did not finish. Image was applied, but the pod may be waiting for external services or runtime configuration."
-            kubectl get pods -n $NAMESPACE -o wide
-            kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE
-          fi
+          kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s
