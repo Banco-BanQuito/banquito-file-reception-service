@@ -168,6 +168,7 @@ public class PaymentDispatchService {
     private void processOnUs(BatchLineMessage message, PaymentDetail detail) {
         coreBankingClient.batchCredit(
                 message.batchId(),
+                message.originatingAccount(),
                 message.accountDestination(),
                 message.amount(),
                 message.reference(),

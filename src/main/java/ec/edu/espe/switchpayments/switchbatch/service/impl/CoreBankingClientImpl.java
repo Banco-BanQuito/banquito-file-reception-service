@@ -153,7 +153,8 @@ public class CoreBankingClientImpl implements ICoreBankingClient {
     }
 
     @Override
-    public void batchCredit(String batchId, String accountDestination, BigDecimal amount, String reference, String transactionUuid) {
+    public void batchCredit(String batchId, String originAccountNumber, String accountDestination, BigDecimal amount,
+                            String reference, String transactionUuid) {
         String txUuid = (transactionUuid != null && !transactionUuid.isBlank())
                 ? transactionUuid
                 : UUID.randomUUID().toString();
@@ -166,6 +167,7 @@ public class CoreBankingClientImpl implements ICoreBankingClient {
 
         Map<String, Object> body = new HashMap<>();
         body.put("batchId", batchId);
+        body.put("originAccountNumber", originAccountNumber);
         body.put("credits", List.of(credit));
 
         restClient.post()

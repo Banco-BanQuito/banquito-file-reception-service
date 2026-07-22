@@ -12,7 +12,8 @@ public interface ICoreBankingClient {
 
     boolean hasSufficientBalance(String accountNumber, BigDecimal requiredAmount);
 
-    void batchCredit(String batchId, String accountDestination, BigDecimal amount, String reference, String transactionUuid);
+    void batchCredit(String batchId, String originAccountNumber, String accountDestination, BigDecimal amount,
+                     String reference, String transactionUuid);
 
     void corporateDebit(String batchId, String accountNumber, BigDecimal totalAmount, BigDecimal commissionAmount);
 
