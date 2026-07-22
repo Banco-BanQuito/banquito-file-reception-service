@@ -56,6 +56,9 @@ public class PaymentBatchStatusController {
         BatchStatusResponse r = new BatchStatusResponse();
         r.setBatchId(batch.getId());
         r.setStatus(batch.getStatus());
+        if (batch.getDeclaredTotalRecords() != null) {
+            r.setDeclaredTotalRecords(batch.getDeclaredTotalRecords());
+        }
         if (batch.getReceivedAt() != null) {
             r.setCreatedAt(LocalDateTime.ofInstant(batch.getReceivedAt(), ZoneOffset.UTC));
         }

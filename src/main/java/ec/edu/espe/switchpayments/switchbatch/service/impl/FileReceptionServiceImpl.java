@@ -128,6 +128,8 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         document.setClientRuc(batch.clientRuc());
         document.setReceivedAt(receivedAt);
         document.setScheduledProcessAt(scheduledProcessAt);
+        document.setDeclaredTotalRecords(batch.declaredRecords());
+        document.setDeclaredTotalAmount(batch.declaredAmount());
         document.setStatus(status);
         document.setChannel("KONG_SWITCH");
         return paymentBatchRepository.save(document);

@@ -1,6 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.model;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -29,6 +30,12 @@ public class PaymentBatchDocument {
 
     @Field("scheduled_process_at")
     private Instant scheduledProcessAt;
+
+    @Field("declared_total_records")
+    private Integer declaredTotalRecords;
+
+    @Field("declared_total_amount")
+    private BigDecimal declaredTotalAmount;
 
     private String status;
     private String channel;
@@ -79,6 +86,22 @@ public class PaymentBatchDocument {
 
     public void setScheduledProcessAt(Instant scheduledProcessAt) {
         this.scheduledProcessAt = scheduledProcessAt;
+    }
+
+    public Integer getDeclaredTotalRecords() {
+        return declaredTotalRecords;
+    }
+
+    public void setDeclaredTotalRecords(Integer declaredTotalRecords) {
+        this.declaredTotalRecords = declaredTotalRecords;
+    }
+
+    public BigDecimal getDeclaredTotalAmount() {
+        return declaredTotalAmount;
+    }
+
+    public void setDeclaredTotalAmount(BigDecimal declaredTotalAmount) {
+        this.declaredTotalAmount = declaredTotalAmount;
     }
 
     public String getStatus() {
