@@ -13,7 +13,9 @@ import ec.edu.espe.switchpayments.switchbatch.service.IPaymentLinePublisher;
 import ec.edu.espe.switchpayments.switchbatch.service.IBankCodeCatalogService;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,12 +89,15 @@ public class PaymentLinesReadyListener {
         paymentLinePublisher.publish(batchId, event.scheduledProcessAt(), messages);
     }
     private List<BatchLineMessage> toMessages(String batchId, ParsedBatch batch, List<ParsedPaymentLine> lines) {
+        Map<String, String> routingCodeClassifications = new HashMap<>();
         return lines.stream()
                 .map(line -> new BatchLineMessage(
                         batchId,
                         line.lineNumber(),
                         line.routingCode(),
-                        bankCodeCatalogService.classify(line.routingCode()),
+                        routingCodeClassifications.computeIfAbsent(
+                                line.routingCode(),
+                                bankCodeCatalogService::classify),
                         line.destinationAccountNumber(),
                         batch.sourceAccountNumber(),
                         batch.declaredRecords(),
