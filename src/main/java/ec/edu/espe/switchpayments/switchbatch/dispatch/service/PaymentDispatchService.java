@@ -45,6 +45,8 @@ public class PaymentDispatchService {
     private static final String FIELD_STATUS = "status";
     private static final String FIELD_UPDATED_AT = "updatedAt";
     private static final String STATUS_PROCESSING = "PROCESSING";
+    private static final String STATUS_DEBITED = "DEBITED";
+    private static final String STATUS_COMPLETING = "COMPLETING";
     private static final String STATUS_FAILED = "FAILED";
 
     private final PaymentDispatchDetailRepository detailRepository;
@@ -224,10 +226,16 @@ public class PaymentDispatchService {
         CompletableFuture<Boolean> outcome = debitOutcomes.computeIfAbsent(batchId, id -> new CompletableFuture<>());
 
         Query claimQuery = new Query(Criteria.where(FIELD_BATCH_ID).is(batchId).and(FIELD_STATUS).is(STATUS_PROCESSING));
-        Update claimUpdate = new Update().set(FIELD_STATUS, "DEBITED");
+        Update claimUpdate = new Update().set(FIELD_STATUS, STATUS_DEBITED);
         UpdateResult claimed = mongoTemplate.updateFirst(claimQuery, claimUpdate, PaymentBatch.class);
 
         if (claimed.getModifiedCount() != 1) {
+            PaymentBatch current = mongoTemplate.findOne(
+                    new Query(Criteria.where(FIELD_BATCH_ID).is(batchId)), PaymentBatch.class);
+            if (isBatchReadyForLineProcessing(current)) {
+                return true;
+            }
+
             try {
                 return outcome.get(20, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
@@ -237,9 +245,9 @@ public class PaymentDispatchService {
             } catch (Exception e) {
                 log.warn("[RF-03][DEBIT] No se pudo confirmar a tiempo el resultado del débito para batchId={}: {}",
                         batchId, e.getMessage());
-                PaymentBatch current = mongoTemplate.findOne(
+                PaymentBatch currentAfterWait = mongoTemplate.findOne(
                         new Query(Criteria.where(FIELD_BATCH_ID).is(batchId)), PaymentBatch.class);
-                return current != null && !STATUS_FAILED.equals(current.getStatus());
+                return isBatchReadyForLineProcessing(currentAfterWait);
             }
         }
 
@@ -270,6 +278,11 @@ public class PaymentDispatchService {
 
         outcome.complete(success);
         return success;
+    }
+
+    private boolean isBatchReadyForLineProcessing(PaymentBatch batch) {
+        return batch != null
+                && (STATUS_DEBITED.equals(batch.getStatus()) || STATUS_COMPLETING.equals(batch.getStatus()));
     }
 
     private String resolveDebitFailureReason(Exception e) {
