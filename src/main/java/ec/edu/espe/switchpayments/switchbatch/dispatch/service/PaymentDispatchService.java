@@ -1,6 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.dispatch.service;
 
 import com.banquito.payswitch.notification.NotificationRequest;
+import jakarta.annotation.PreDestroy;
 import com.mongodb.client.result.UpdateResult;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcRequest;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcResponse;
@@ -33,6 +34,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -48,6 +51,7 @@ public class PaymentDispatchService {
     private static final String STATUS_DEBITED = "DEBITED";
     private static final String STATUS_COMPLETING = "COMPLETING";
     private static final String STATUS_FAILED = "FAILED";
+    private static final int LINE_LOG_INTERVAL = 20;
 
     private final PaymentDispatchDetailRepository detailRepository;
     private final MongoTemplate mongoTemplate;
@@ -58,6 +62,7 @@ public class PaymentDispatchService {
     private final FileReceptionProperties properties;
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> debitOutcomes = new ConcurrentHashMap<>();
+    private final ExecutorService notificationExecutor = Executors.newFixedThreadPool(2);
 
     public PaymentDispatchService(PaymentDispatchDetailRepository detailRepository,
                                    MongoTemplate mongoTemplate,
@@ -76,7 +81,7 @@ public class PaymentDispatchService {
     }
 
     public void processOnUsLine(BatchLineMessage message) {
-        log.info("Received ON_US payment line: batchId={}, lineNumber={}", message.batchId(), message.lineNumber());
+        logReceivedLine("ON_US", message);
         PaymentDetail detail = prepareLine(message);
         if (detail == null || !ensureBatchDebited(message, detail)) {
             return;
@@ -95,10 +100,13 @@ public class PaymentDispatchService {
         }
 
         finalizeLine(message, detail, success, errorCode, errorMessage, "PROCESSED");
+        if (success) {
+            sendNotificationAsync(message, detail.getId());
+        }
     }
 
     public void processOffUsLine(BatchLineMessage message) {
-        log.info("Received OFF_US payment line: batchId={}, lineNumber={}", message.batchId(), message.lineNumber());
+        logReceivedLine("OFF_US", message);
         PaymentDetail detail = prepareLine(message);
         if (detail == null || !ensureBatchDebited(message, detail)) {
             return;
@@ -121,7 +129,10 @@ public class PaymentDispatchService {
     }
 
     public void processInvalidLine(BatchLineMessage message) {
-        log.warn("Invalid routing code '{}' for batchId={}", message.routingCode(), message.batchId());
+        if (shouldLogLine(message)) {
+            log.warn("Invalid routing code '{}' for batchId={}, lineNumber={}",
+                    message.routingCode(), message.batchId(), message.lineNumber());
+        }
         PaymentDetail detail = prepareLine(message);
         if (detail == null || !ensureBatchDebited(message, detail)) {
             return;
@@ -176,8 +187,6 @@ public class PaymentDispatchService {
                 message.reference(),
                 detail.getTransactionUuid()
         );
-
-        sendNotificationAsync(message, detail.getId());
     }
 
     private void sendNotificationAsync(BatchLineMessage message, String detailId) {
@@ -201,7 +210,26 @@ public class PaymentDispatchService {
             } catch (Exception e) {
                 log.warn("Notification failed batchId={} line={}: {}", message.batchId(), message.lineNumber(), e.getMessage());
             }
-        });
+        }, notificationExecutor);
+    }
+
+    private void logReceivedLine(String route, BatchLineMessage message) {
+        if (shouldLogLine(message)) {
+            log.info("Received {} payment line: batchId={}, lineNumber={}",
+                    route, message.batchId(), message.lineNumber());
+        } else {
+            log.debug("Received {} payment line: batchId={}, lineNumber={}",
+                    route, message.batchId(), message.lineNumber());
+        }
+    }
+
+    private boolean shouldLogLine(BatchLineMessage message) {
+        return message.lineNumber() <= 10 || message.lineNumber() % LINE_LOG_INTERVAL == 0;
+    }
+
+    @PreDestroy
+    public void shutdownNotificationExecutor() {
+        notificationExecutor.shutdown();
     }
 
     private void ensureBatchExists(BatchLineMessage message) {
