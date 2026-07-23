@@ -54,7 +54,7 @@ public class PaymentDispatchService {
     private static final String STATUS_COMPLETING = "COMPLETING";
     private static final String STATUS_FAILED = "FAILED";
     private static final int LINE_LOG_INTERVAL = 20;
-    private static final int COUNTER_FLUSH_THRESHOLD = 50;
+    private static final int COUNTER_FLUSH_THRESHOLD = 10;
 
     private final PaymentDispatchDetailRepository detailRepository;
     private final MongoTemplate mongoTemplate;
@@ -87,7 +87,7 @@ public class PaymentDispatchService {
 
     @PostConstruct
     public void startCounterFlush() {
-        counterFlushExecutor.scheduleAtFixedRate(this::flushAllCounterBuffersSafely, 1, 1, TimeUnit.SECONDS);
+        counterFlushExecutor.scheduleAtFixedRate(this::flushAllCounterBuffersSafely, 500, 500, TimeUnit.MILLISECONDS);
     }
 
     public void processOnUsLine(BatchLineMessage message) {
