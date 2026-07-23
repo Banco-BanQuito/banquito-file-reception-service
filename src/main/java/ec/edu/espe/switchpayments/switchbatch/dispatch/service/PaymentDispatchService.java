@@ -1,6 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.dispatch.service;
 
 import com.banquito.payswitch.notification.NotificationRequest;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import com.mongodb.client.result.UpdateResult;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcRequest;
@@ -36,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -52,6 +54,7 @@ public class PaymentDispatchService {
     private static final String STATUS_COMPLETING = "COMPLETING";
     private static final String STATUS_FAILED = "FAILED";
     private static final int LINE_LOG_INTERVAL = 20;
+    private static final int COUNTER_FLUSH_THRESHOLD = 50;
 
     private final PaymentDispatchDetailRepository detailRepository;
     private final MongoTemplate mongoTemplate;
@@ -62,7 +65,9 @@ public class PaymentDispatchService {
     private final FileReceptionProperties properties;
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> debitOutcomes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CounterBuffer> counterBuffers = new ConcurrentHashMap<>();
     private final ExecutorService notificationExecutor = Executors.newFixedThreadPool(2);
+    private final ScheduledExecutorService counterFlushExecutor = Executors.newSingleThreadScheduledExecutor();
 
     public PaymentDispatchService(PaymentDispatchDetailRepository detailRepository,
                                    MongoTemplate mongoTemplate,
@@ -78,6 +83,11 @@ public class PaymentDispatchService {
         this.notificationClient = notificationClient;
         this.clearingPublisher = clearingPublisher;
         this.properties = properties;
+    }
+
+    @PostConstruct
+    public void startCounterFlush() {
+        counterFlushExecutor.scheduleAtFixedRate(this::flushAllCounterBuffersSafely, 1, 1, TimeUnit.SECONDS);
     }
 
     public void processOnUsLine(BatchLineMessage message) {
@@ -228,7 +238,9 @@ public class PaymentDispatchService {
     }
 
     @PreDestroy
-    public void shutdownNotificationExecutor() {
+    public void shutdownExecutors() {
+        flushAllCounterBuffersSafely();
+        counterFlushExecutor.shutdown();
         notificationExecutor.shutdown();
     }
 
@@ -336,13 +348,42 @@ public class PaymentDispatchService {
     }
 
     private void updateBatchCounters(BatchLineMessage message, boolean success) {
-        Query query = new Query(Criteria.where(FIELD_BATCH_ID).is(message.batchId()));
+        CounterBuffer buffer = counterBuffers.computeIfAbsent(message.batchId(), ignored -> new CounterBuffer());
+        CounterSnapshot snapshot = buffer.add(success, message.amount());
+        if (snapshot.totalRecords() >= COUNTER_FLUSH_THRESHOLD) {
+            flushCounterBuffer(message.batchId());
+        }
+    }
+
+    private void flushAllCounterBuffersSafely() {
+        try {
+            counterBuffers.keySet().forEach(this::flushCounterBuffer);
+        } catch (Exception e) {
+            log.warn("Error flushing batch counter buffers: {}", e.getMessage());
+        }
+    }
+
+    private void flushCounterBuffer(String batchId) {
+        CounterBuffer buffer = counterBuffers.get(batchId);
+        if (buffer == null) {
+            return;
+        }
+
+        CounterSnapshot snapshot = buffer.drain();
+        if (snapshot.totalRecords() <= 0) {
+            return;
+        }
+
+        Query query = new Query(Criteria.where(FIELD_BATCH_ID).is(batchId));
         Update update = new Update().set(FIELD_UPDATED_AT, LocalDateTime.now(SERVICE_ZONE));
 
-        if (success) {
-            update.inc("successfulRecords", 1).inc("successfulAmount", message.amount());
-        } else {
-            update.inc("rejectedRecords", 1).inc("rejectedAmount", message.amount());
+        if (snapshot.successfulRecords() > 0) {
+            update.inc("successfulRecords", snapshot.successfulRecords())
+                    .inc("successfulAmount", snapshot.successfulAmount());
+        }
+        if (snapshot.rejectedRecords() > 0) {
+            update.inc("rejectedRecords", snapshot.rejectedRecords())
+                    .inc("rejectedAmount", snapshot.rejectedAmount());
         }
 
         FindAndModifyOptions opts = FindAndModifyOptions.options().returnNew(true);
@@ -353,6 +394,45 @@ public class PaymentDispatchService {
             if (processed >= updated.getDeclaredTotalRecords() && tryClaimCompletion(updated.getBatchId())) {
                 completeBatch(updated);
             }
+        }
+    }
+
+    private record CounterSnapshot(int successfulRecords, int rejectedRecords,
+                                   BigDecimal successfulAmount, BigDecimal rejectedAmount) {
+        private int totalRecords() {
+            return successfulRecords + rejectedRecords;
+        }
+    }
+
+    private static final class CounterBuffer {
+        private int successfulRecords;
+        private int rejectedRecords;
+        private BigDecimal successfulAmount = BigDecimal.ZERO;
+        private BigDecimal rejectedAmount = BigDecimal.ZERO;
+
+        private synchronized CounterSnapshot add(boolean success, BigDecimal amount) {
+            BigDecimal safeAmount = amount != null ? amount : BigDecimal.ZERO;
+            if (success) {
+                successfulRecords++;
+                successfulAmount = successfulAmount.add(safeAmount);
+            } else {
+                rejectedRecords++;
+                rejectedAmount = rejectedAmount.add(safeAmount);
+            }
+            return snapshot();
+        }
+
+        private synchronized CounterSnapshot drain() {
+            CounterSnapshot snapshot = snapshot();
+            successfulRecords = 0;
+            rejectedRecords = 0;
+            successfulAmount = BigDecimal.ZERO;
+            rejectedAmount = BigDecimal.ZERO;
+            return snapshot;
+        }
+
+        private CounterSnapshot snapshot() {
+            return new CounterSnapshot(successfulRecords, rejectedRecords, successfulAmount, rejectedAmount);
         }
     }
 
