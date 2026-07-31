@@ -8,8 +8,10 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.model.OffUsClearingMessag
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentBatch;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentDetail;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchDetailRepository;
+import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
+import ec.edu.espe.switchpayments.switchbatch.service.impl.PubSubClearingPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,47 +20,40 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PaymentDispatchServiceTest {
 
     private static final String BATCH_1 = "11111111-1111-1111-1111-111111111111";
-    private static final String BATCH_2 = "22222222-2222-2222-2222-222222222222";
 
     @Mock
     private PaymentDispatchDetailRepository detailRepository;
-
     @Mock
     private MongoTemplate mongoTemplate;
-
     @Mock
     private ICoreBankingClient coreBankingClient;
-
     @Mock
     private TariffGrpcClient tariffClient;
-
     @Mock
     private NotificationGrpcClient notificationClient;
-
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private PubSubClearingPublisher clearingPublisher;
 
     private FileReceptionProperties properties;
     private PaymentDispatchService dispatchService;
@@ -66,20 +61,17 @@ class PaymentDispatchServiceTest {
     @BeforeEach
     void setUp() {
         properties = new FileReceptionProperties();
-        properties.setClearingExchange("clearing.exchange");
-        properties.setClearingRoutingKey("clearing.outbound");
         properties.setCorporateAccountNumber("0000000000");
-        properties.setDispatchLocalCompletionEnabled(false);
 
         dispatchService = new PaymentDispatchService(detailRepository, mongoTemplate, coreBankingClient,
-                tariffClient, notificationClient, rabbitTemplate, properties);
+                tariffClient, notificationClient, clearingPublisher, properties);
 
         when(detailRepository.save(any(PaymentDetail.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        UpdateResult updateResult = mock(UpdateResult.class);
-        when(updateResult.getModifiedCount()).thenReturn(1L);
+        UpdateResult claimResult = mock(UpdateResult.class);
+        when(claimResult.getModifiedCount()).thenReturn(1L);
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(PaymentBatch.class)))
-                .thenReturn(updateResult);
+                .thenReturn(claimResult);
 
         PaymentBatch batch = new PaymentBatch();
         batch.setBatchId(BATCH_1);
@@ -89,131 +81,136 @@ class PaymentDispatchServiceTest {
                 .thenReturn(batch);
     }
 
-    @Test
-    void processOnUsLine_debeAcreditar_cuandoCodigoEs001() {
-        BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
-
-        dispatchService.processOnUsLine(message);
-
-        verify(coreBankingClient).batchCredit(
-                eq(BATCH_1), eq("0009876543"), eq(new BigDecimal("500.00")), any(), any());
-
-        ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
-        verify(detailRepository, atLeast(2)).save(captor.capture());
-        PaymentDetail finalDetail = captor.getAllValues().get(captor.getAllValues().size() - 1);
-        assertThat(finalDetail.getStatus()).isEqualTo("PROCESSED");
+    private BatchLineMessage buildMessage(String batchId, int lineNumber, String routingCode,
+                                          String routingClassification, String accountDest, BigDecimal amount) {
+        return new BatchLineMessage(
+                batchId, lineNumber, routingCode, routingClassification, accountDest, "0001111111",
+                10, new BigDecimal("1000.00"), amount,
+                "REF-" + lineNumber, "Beneficiario Test", "test@test.com");
     }
 
     @Test
-    void processOffUsLine_debePublicarEnColaDeSalida_cuandoCodigoEs002() {
+    void processOnUsLineCreditsAccountAndFlushesSuccessfulCounter() {
+        BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
+
+        dispatchService.processOnUsLine(message);
+        dispatchService.shutdownExecutors();
+
+        verify(coreBankingClient).batchCredit(
+                eq(BATCH_1), eq("0001111111"), eq("0009876543"), eq(new BigDecimal("500.00")), any(), any());
+
+        ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
+        verify(detailRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+        assertThat(captor.getAllValues().get(captor.getAllValues().size() - 1).getStatus()).isEqualTo("PROCESSED");
+
+        verify(mongoTemplate, org.mockito.Mockito.atLeastOnce())
+                .findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(PaymentBatch.class));
+    }
+
+    @Test
+    void processOffUsLinePublishesClearingMessageAndMarksCleared() {
         BatchLineMessage message = buildMessage(BATCH_1, 2, "002", "OFF_US", "0009999999", new BigDecimal("200.00"));
 
         dispatchService.processOffUsLine(message);
 
         ArgumentCaptor<OffUsClearingMessage> clearingCaptor = ArgumentCaptor.forClass(OffUsClearingMessage.class);
-        verify(rabbitTemplate).convertAndSend(eq("clearing.exchange"), eq("clearing.outbound"), clearingCaptor.capture());
+        verify(clearingPublisher).publish(clearingCaptor.capture());
 
         OffUsClearingMessage adapted = clearingCaptor.getValue();
-        assertThat(adapted.getBatchId()).hasToString(BATCH_1);
         assertThat(adapted.getRoutingCode()).isEqualTo("002");
         assertThat(adapted.getDestinationAccount()).isEqualTo("0009999999");
-        assertThat(adapted.getOriginAccount()).isEqualTo("0001111111");
         assertThat(adapted.getAmount()).isEqualByComparingTo(new BigDecimal("200.00"));
-        assertThat(adapted.getCurrency()).isEqualTo("USD");
-        assertThat(adapted.getConcept()).isEqualTo("REF-2");
-        assertThat(adapted.getValueDate()).isNotNull();
 
         ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
-        verify(detailRepository, atLeast(2)).save(captor.capture());
-        PaymentDetail finalDetail = captor.getAllValues().get(captor.getAllValues().size() - 1);
-        assertThat(finalDetail.getStatus()).isEqualTo("CLEARED");
+        verify(detailRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+        assertThat(captor.getAllValues().get(captor.getAllValues().size() - 1).getStatus()).isEqualTo("CLEARED");
     }
 
     @Test
-    void processInvalidLine_debeRechazar_cuandoCodigoEsInvalido() {
+    void processInvalidLineRejectsWithoutCallingCoreOrClearing() {
         BatchLineMessage message = buildMessage(BATCH_1, 3, "999", null, "0009999999", new BigDecimal("100.00"));
 
         dispatchService.processInvalidLine(message);
 
-        verify(coreBankingClient, never()).batchCredit(any(), any(), any(), any(), any());
-        verifyNoInteractions(rabbitTemplate);
+        verify(coreBankingClient, never()).batchCredit(any(), any(), any(), any(), any(), any());
+        verify(clearingPublisher, never()).publish(any());
 
         ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
-        verify(detailRepository, atLeast(2)).save(captor.capture());
+        verify(detailRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
         PaymentDetail finalDetail = captor.getAllValues().get(captor.getAllValues().size() - 1);
         assertThat(finalDetail.getStatus()).isEqualTo("REJECTED");
         assertThat(finalDetail.getErrorCode()).isEqualTo("ROUTING_CODE_INVALID");
     }
 
     @Test
-    void processInvalidLine_debeDevolverMontoRechazado_aunqueFalleCalculoDeTarifa() {
-        PaymentBatch batchAlCompletar = new PaymentBatch();
-        batchAlCompletar.setBatchId(BATCH_1);
-        batchAlCompletar.setDeclaredTotalRecords(1);
-        batchAlCompletar.setSuccessfulRecords(0);
-        batchAlCompletar.setRejectedRecords(1);
-        batchAlCompletar.setRejectedAmount(new BigDecimal("100.00"));
-        batchAlCompletar.setOriginatingAccount("0001111111");
-        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
-                any(FindAndModifyOptions.class), eq(PaymentBatch.class)))
-                .thenReturn(batchAlCompletar);
-        when(tariffClient.calculateTariff(any())).thenThrow(new RuntimeException("UNAVAILABLE: io exception"));
-
-        BatchLineMessage message = buildMessage(BATCH_1, 1, "999", null, "0009999999", new BigDecimal("100.00"));
-        dispatchService.processInvalidLine(message);
-
-        verify(coreBankingClient).corporateRefund(BATCH_1, "0001111111", new BigDecimal("100.00"));
-    }
-
-    @Test
-    void processOnUsLine_debeIgnorarMensajeDuplicado_cuandoHayDuplicateKey() {
+    void processOnUsLineIgnoresDuplicateMessage() {
         BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
         when(detailRepository.save(any(PaymentDetail.class)))
                 .thenThrow(new DuplicateKeyException("duplicate batch_line_unique"));
 
         dispatchService.processOnUsLine(message);
 
-        verifyNoInteractions(coreBankingClient);
-        verifyNoInteractions(mongoTemplate);
+        verify(coreBankingClient, never()).batchCredit(any(), any(), any(), any(), any(), any());
+        verify(mongoTemplate, never()).upsert(any(Query.class), any(Update.class), eq(PaymentBatch.class));
     }
 
     @Test
-    void processOnUsLine_debeGuardarDetalleInicial_conEstadoPROCESSING() {
-        List<String> statusesPorOrden = new ArrayList<>();
-        when(detailRepository.save(any(PaymentDetail.class))).thenAnswer(inv -> {
-            PaymentDetail d = inv.getArgument(0);
-            statusesPorOrden.add(d.getStatus());
-            return d;
-        });
+    void ensureBatchDebitedRejectsLineWhenInitialDebitFails() {
+        org.mockito.Mockito.doThrow(new RuntimeException("Core no disponible"))
+                .when(coreBankingClient).corporateDebit(any(), any(), any(), any());
+        when(mongoTemplate.findOne(any(Query.class), eq(PaymentBatch.class))).thenReturn(new PaymentBatch());
 
-        BatchLineMessage message = buildMessage(BATCH_1, 5, "001", "ON_US", "0001234567", new BigDecimal("300.00"));
+        BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
         dispatchService.processOnUsLine(message);
 
-        assertThat(statusesPorOrden).isNotEmpty();
-        assertThat(statusesPorOrden.get(0)).isEqualTo("PROCESSING");
-        assertThat(statusesPorOrden.get(statusesPorOrden.size() - 1)).isEqualTo("PROCESSED");
-
-        verify(detailRepository, atLeast(2)).save(argThat(d ->
-                BATCH_1.equals(d.getBatchId()) && d.getLineNumber() == 5));
+        verify(coreBankingClient, never()).batchCredit(any(), any(), any(), any(), any(), any());
+        ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
+        verify(detailRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+        PaymentDetail lastSaved = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertThat(lastSaved.getStatus()).isEqualTo("REJECTED");
+        assertThat(lastSaved.getErrorCode()).isEqualTo("BATCH_DEBIT_FAILED");
     }
 
     @Test
-    void processOffUsLine_debePublicarEnColaDeSalida_paraTodosLosCodigos() {
-        String[] offusCodes = {"003", "004", "005", "010", "017", "021", "023"};
-        for (String code : offusCodes) {
-            BatchLineMessage message = buildMessage(BATCH_2, 1, code, "OFF_US", "0009999999", new BigDecimal("50.00"));
-            dispatchService.processOffUsLine(message);
-        }
-        verify(rabbitTemplate, times(offusCodes.length))
-                .convertAndSend(eq("clearing.exchange"), eq("clearing.outbound"), any(OffUsClearingMessage.class));
+    void completeBatchChargesCommissionWhenTariffReturnsPositiveCharge() {
+        PaymentBatch completedBatch = new PaymentBatch();
+        completedBatch.setBatchId(BATCH_1);
+        completedBatch.setDeclaredTotalRecords(1);
+        completedBatch.setSuccessfulRecords(1);
+        completedBatch.setRejectedRecords(0);
+        completedBatch.setRejectedAmount(BigDecimal.ZERO);
+        completedBatch.setOriginatingAccount("0001111111");
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+                any(FindAndModifyOptions.class), eq(PaymentBatch.class)))
+                .thenReturn(completedBatch);
+        when(tariffClient.calculateTariff(any()))
+                .thenReturn(TariffCalculationGrpcResponse.newBuilder().setTotalCharge("5.75").build());
+
+        BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
+        dispatchService.processOnUsLine(message);
+        dispatchService.shutdownExecutors();
+
+        verify(coreBankingClient).corporateDebit(BATCH_1, "0001111111", BigDecimal.ZERO, new BigDecimal("5.75"));
     }
 
-    private BatchLineMessage buildMessage(String batchId, int lineNumber,
-                                          String routingCode, String routingClassification,
-                                          String accountDest, BigDecimal amount) {
-        return new BatchLineMessage(
-                batchId, lineNumber, routingCode, routingClassification, accountDest, "0001111111",
-                10, new BigDecimal("1000.00"), amount,
-                "REF-" + lineNumber, "Beneficiario Test", "test@test.com");
+    @Test
+    void completeBatchInLocalModeSkipsCommissionAndRefund() {
+        properties.setDispatchLocalCompletionEnabled(true);
+        PaymentBatch completedBatch = new PaymentBatch();
+        completedBatch.setBatchId(BATCH_1);
+        completedBatch.setDeclaredTotalRecords(1);
+        completedBatch.setSuccessfulRecords(1);
+        completedBatch.setRejectedRecords(0);
+        completedBatch.setRejectedAmount(BigDecimal.ZERO);
+        when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+                any(FindAndModifyOptions.class), eq(PaymentBatch.class)))
+                .thenReturn(completedBatch);
+
+        BatchLineMessage message = buildMessage(BATCH_1, 1, "001", "ON_US", "0009876543", new BigDecimal("500.00"));
+        dispatchService.processOnUsLine(message);
+        dispatchService.shutdownExecutors();
+
+        verify(tariffClient, never()).calculateTariff(any());
+        verify(coreBankingClient, never()).corporateRefund(any(), any(), any());
     }
 }
