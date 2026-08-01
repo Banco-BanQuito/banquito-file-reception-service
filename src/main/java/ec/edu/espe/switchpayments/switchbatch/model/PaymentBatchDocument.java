@@ -24,6 +24,9 @@ public class PaymentBatchDocument {
     @Field("client_ruc")
     private String clientRuc;
 
+    @Field("source_account_number")
+    private String sourceAccountNumber;
+
     @Indexed
     @Field("received_at")
     private Instant receivedAt;
@@ -70,6 +73,14 @@ public class PaymentBatchDocument {
 
     public void setClientRuc(String clientRuc) {
         this.clientRuc = clientRuc;
+    }
+
+    public String getSourceAccountNumber() {
+        return sourceAccountNumber;
+    }
+
+    public void setSourceAccountNumber(String sourceAccountNumber) {
+        this.sourceAccountNumber = sourceAccountNumber;
     }
 
     public Instant getReceivedAt() {

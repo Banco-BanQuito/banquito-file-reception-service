@@ -34,8 +34,12 @@ public class PubSubPaymentLinePublisher {
             PubsubMessage pubsubMessage = PubsubMessage.newBuilder()
                     .setData(ByteString.copyFrom(payload))
                     .putAttributes("routingKey", routingKeyFor(message))
-                    .putAttributes("source", "file-reception-service")
-                    .putAttributes("scheduledProcessAt", scheduledProcessAt.toString())
+                    .putAttributes("routingClassification", message.routingClassification())
+                    .putAttributes("messageType", "PAYMENT_LINE_CLASSIFIED")
+                    .putAttributes("batchId", message.batchId())
+                    .putAttributes("lineNumber", String.valueOf(message.lineNumber()))
+                    .putAttributes("source", "file-reception-service-embedded-router")
+                    .putAttributes("scheduledProcessAt", scheduledProcessAt != null ? scheduledProcessAt.toString() : "")
                     .build();
             ApiFuture<String> messageId = publisher.publish(pubsubMessage);
             messageId.get();

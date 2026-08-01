@@ -338,3 +338,4 @@ FileReceptionController
   -> Account Core o Clearinghouse
   -> PaymentBatchStatusController
 ```
+> Nota de arquitectura actual: RabbitMQ fue reemplazado por Google Cloud Pub/Sub. Las referencias historicas a RabbitMQ en este documento describen el diseno anterior. El bounded context objetivo de `file-reception-service` es ingesta de archivos; el procesamiento/dispatch debe vivir en un consumidor dedicado.

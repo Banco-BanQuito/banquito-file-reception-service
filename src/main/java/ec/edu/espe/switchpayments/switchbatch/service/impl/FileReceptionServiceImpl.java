@@ -24,7 +24,9 @@ import ec.edu.espe.switchpayments.switchbatch.event.PaymentLinesReadyEvent;
 import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
+import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchLineDocument;
 import ec.edu.espe.switchpayments.switchbatch.repository.BatchStatusLogRepository;
+import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchLineRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
 import ec.edu.espe.switchpayments.switchbatch.service.IBusinessDayService;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
@@ -39,6 +41,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     private final ICsvBatchParser csvBatchParser;
     private final FileReceptionProperties properties;
     private final PaymentBatchRepository paymentBatchRepository;
+    private final PaymentBatchLineRepository paymentBatchLineRepository;
     private final BatchStatusLogRepository batchStatusLogRepository;
     private final IBusinessDayService businessDayService;
     private final ICoreBankingClient coreBankingClient;
@@ -48,16 +51,18 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
                                     FileReceptionProperties properties,
                                     PaymentBatchRepository paymentBatchRepository,
+                                    PaymentBatchLineRepository paymentBatchLineRepository,
                                     BatchStatusLogRepository batchStatusLogRepository,
                                     IBusinessDayService businessDayService,
                                     ICoreBankingClient coreBankingClient,
                                     ApplicationEventPublisher eventPublisher) {
-        this(csvBatchParser, properties, paymentBatchRepository, batchStatusLogRepository,
+        this(csvBatchParser, properties, paymentBatchRepository, paymentBatchLineRepository, batchStatusLogRepository,
                 businessDayService, coreBankingClient, eventPublisher, Clock.systemDefaultZone());
     }
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
                                     FileReceptionProperties properties,
                                     PaymentBatchRepository paymentBatchRepository,
+                                    PaymentBatchLineRepository paymentBatchLineRepository,
                                     BatchStatusLogRepository batchStatusLogRepository,
                                     IBusinessDayService businessDayService,
                                     ICoreBankingClient coreBankingClient,
@@ -66,6 +71,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         this.csvBatchParser = csvBatchParser;
         this.properties = properties;
         this.paymentBatchRepository = paymentBatchRepository;
+        this.paymentBatchLineRepository = paymentBatchLineRepository;
         this.batchStatusLogRepository = batchStatusLogRepository;
         this.businessDayService = businessDayService;
         this.coreBankingClient = coreBankingClient;
@@ -88,6 +94,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         String initialStatus = duplicateValid ? schedule.status() : "DUPLICATE";
         PaymentBatchDocument batchDocument = saveBatch(file, batch, batchId, receivedAt,
                 schedule.scheduledProcessAt(), initialStatus);
+        saveBatchLines(batchId, batch);
         saveStatusLog(batchDocument.getId(), null, batchDocument.getStatus());
         if (!duplicateValid) {
             throw new DuplicateBatchException("Lote duplicado");
@@ -126,6 +133,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         document.setFileName(file.getOriginalFilename());
         document.setFileHash(batch.fileHash());
         document.setClientRuc(batch.clientRuc());
+        document.setSourceAccountNumber(batch.sourceAccountNumber());
         document.setReceivedAt(receivedAt);
         document.setScheduledProcessAt(scheduledProcessAt);
         document.setDeclaredTotalRecords(batch.declaredRecords());
@@ -133,6 +141,24 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         document.setStatus(status);
         document.setChannel("KONG_SWITCH");
         return paymentBatchRepository.save(document);
+    }
+
+    private void saveBatchLines(String batchId, ParsedBatch batch) {
+        var documents = batch.lines().stream().map(line -> {
+            PaymentBatchLineDocument document = new PaymentBatchLineDocument();
+            document.setId(batchId + "-" + line.lineNumber());
+            document.setBatchId(batchId);
+            document.setLineNumber(line.lineNumber());
+            document.setRoutingCode(line.routingCode());
+            document.setBeneficiaryIdentification(line.beneficiaryIdentification());
+            document.setBeneficiaryName(line.beneficiaryName());
+            document.setDestinationAccountNumber(line.destinationAccountNumber());
+            document.setAmount(line.amount());
+            document.setReference(line.reference());
+            document.setBeneficiaryEmail(line.beneficiaryEmail());
+            return document;
+        }).toList();
+        paymentBatchLineRepository.saveAll(documents);
     }
 
     private void saveStatusLog(String batchId, String previousStatus, String newStatus) {

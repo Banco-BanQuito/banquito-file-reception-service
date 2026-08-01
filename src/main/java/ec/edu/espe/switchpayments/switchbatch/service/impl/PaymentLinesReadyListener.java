@@ -19,12 +19,18 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.file-reception",
+        name = "embedded-router-enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class PaymentLinesReadyListener {
     private static final Logger logger = LoggerFactory.getLogger(PaymentLinesReadyListener.class);
     private final IPaymentLinePublisher paymentLinePublisher;
@@ -54,7 +60,7 @@ public class PaymentLinesReadyListener {
     public void onPaymentLinesReady(PaymentLinesReadyEvent event) {
         ParsedBatch batch = event.batch();
         String batchId = event.batchId();
-        logger.info("[ASYNC] Iniciando validación y fragmentación del lote {} ({} líneas declaradas).",
+        logger.info("[ASYNC] Iniciando validaciÃ³n y fragmentaciÃ³n del lote {} ({} lÃ­neas declaradas).",
                 batchId, batch.declaredRecords());
 
         boolean customerServiceActive = coreBankingClient.hasActiveMassPaymentService(
@@ -66,21 +72,21 @@ public class PaymentLinesReadyListener {
             saveValidation(batchId, batch, event.duplicateValid(), false);
             return;
         }
-        logger.info("[ASYNC] Procesando líneas utilizando hilos concurrentes para optimizar la carga.");
+        logger.info("[ASYNC] Procesando lÃ­neas utilizando hilos concurrentes para optimizar la carga.");
         List<ParsedPaymentLine> acceptedLines = batch.lines();
         boolean sourceAccountValid = coreBankingClient.isFavoriteAccount(
                 batch.sourceAccountNumber(), batch.clientRuc());
         boolean fullyValid = sourceAccountValid && acceptedLines.size() == batch.lines().size();
         saveValidation(batchId, batch, event.duplicateValid(), fullyValid);
         if (!sourceAccountValid) {
-            logger.warn("[ASYNC] Lote {} sin cuenta origen favorita válida. Ninguna línea publicada.", batchId);
+            logger.warn("[ASYNC] Lote {} sin cuenta origen favorita vÃ¡lida. Ninguna lÃ­nea publicada.", batchId);
             return;
         }
         List<BatchLineMessage> messages = toMessages(batchId, batch, acceptedLines);
-        logger.info("[ASYNC] Publicando un total de {} líneas en Pub/Sub para lote {}.", messages.size(), batchId);
+        logger.info("[ASYNC] Publicando un total de {} lÃ­neas en Pub/Sub para lote {}.", messages.size(), batchId);
 
         if (event.scheduledProcessAt().isAfter(Instant.now())) {
-            logger.info("[ASYNC] Lote {} programado para {}. Publicación diferida.", batchId, event.scheduledProcessAt());
+            logger.info("[ASYNC] Lote {} programado para {}. PublicaciÃ³n diferida.", batchId, event.scheduledProcessAt());
             taskScheduler.schedule(
                     () -> paymentLinePublisher.publish(batchId, event.scheduledProcessAt(), messages),
                     event.scheduledProcessAt());
@@ -142,3 +148,4 @@ public class PaymentLinesReadyListener {
         statusLogRepository.save(log);
     }
 }
+

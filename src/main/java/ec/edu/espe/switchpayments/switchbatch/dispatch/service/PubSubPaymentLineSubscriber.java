@@ -10,6 +10,7 @@ import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.file-reception",
+        name = "dispatch-enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class PubSubPaymentLineSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(PubSubPaymentLineSubscriber.class);
@@ -37,9 +43,15 @@ public class PubSubPaymentLineSubscriber {
 
     @PostConstruct
     public void start() {
-        startSubscriber(properties.getPubsubPaymentLinesOnUsSubscription(), dispatchService::processOnUsLine);
-        startSubscriber(properties.getPubsubPaymentLinesOffUsSubscription(), dispatchService::processOffUsLine);
-        startSubscriber(properties.getPubsubPaymentLinesInvalidSubscription(), dispatchService::processInvalidLine);
+        if (properties.isDispatchOnUsEnabled()) {
+            startSubscriber(properties.getPubsubPaymentLinesOnUsSubscription(), dispatchService::processOnUsLine);
+        }
+        if (properties.isDispatchOffUsEnabled()) {
+            startSubscriber(properties.getPubsubPaymentLinesOffUsSubscription(), dispatchService::processOffUsLine);
+        }
+        if (properties.isDispatchInvalidEnabled()) {
+            startSubscriber(properties.getPubsubPaymentLinesInvalidSubscription(), dispatchService::processInvalidLine);
+        }
     }
 
     @PreDestroy

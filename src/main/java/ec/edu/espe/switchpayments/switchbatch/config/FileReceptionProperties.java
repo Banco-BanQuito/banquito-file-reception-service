@@ -7,14 +7,11 @@ public class FileReceptionProperties {
 
     private int duplicateWindowDays = 30;
     private String fileDelimiter = ",";
-    private boolean rabbitEnabled = false;
-    private String rabbitExchange = "payment.exchange";
-    private String rabbitQueueOnUs = "payment.lines.onus.queue";
-    private String rabbitQueueOffUs = "payment.lines.offus.queue";
-    private String rabbitQueueInvalid = "payment.lines.invalid.queue";
-    private String rabbitRoutingKeyOnUs = "onus";
-    private String rabbitRoutingKeyOffUs = "offus";
-    private String rabbitRoutingKeyInvalid = "invalid";
+    private boolean embeddedRouterEnabled = true;
+    private boolean dispatchEnabled = true;
+    private boolean dispatchOnUsEnabled = true;
+    private boolean dispatchOffUsEnabled = true;
+    private boolean dispatchInvalidEnabled = true;
     private long grpcDeadlineSeconds = 10;
     private String tariffGrpcHost = "localhost";
     private int tariffGrpcPort = 9090;
@@ -61,68 +58,44 @@ public class FileReceptionProperties {
         this.fileDelimiter = fileDelimiter;
     }
 
-    public boolean isRabbitEnabled() {
-        return rabbitEnabled;
+    public boolean isEmbeddedRouterEnabled() {
+        return embeddedRouterEnabled;
     }
 
-    public void setRabbitEnabled(boolean rabbitEnabled) {
-        this.rabbitEnabled = rabbitEnabled;
+    public void setEmbeddedRouterEnabled(boolean embeddedRouterEnabled) {
+        this.embeddedRouterEnabled = embeddedRouterEnabled;
     }
 
-    public String getRabbitExchange() {
-        return rabbitExchange;
+    public boolean isDispatchEnabled() {
+        return dispatchEnabled;
     }
 
-    public void setRabbitExchange(String rabbitExchange) {
-        this.rabbitExchange = rabbitExchange;
+    public void setDispatchEnabled(boolean dispatchEnabled) {
+        this.dispatchEnabled = dispatchEnabled;
     }
 
-    public String getRabbitQueueOnUs() {
-        return rabbitQueueOnUs;
+    public boolean isDispatchOnUsEnabled() {
+        return dispatchOnUsEnabled;
     }
 
-    public void setRabbitQueueOnUs(String rabbitQueueOnUs) {
-        this.rabbitQueueOnUs = rabbitQueueOnUs;
+    public void setDispatchOnUsEnabled(boolean dispatchOnUsEnabled) {
+        this.dispatchOnUsEnabled = dispatchOnUsEnabled;
     }
 
-    public String getRabbitQueueOffUs() {
-        return rabbitQueueOffUs;
+    public boolean isDispatchOffUsEnabled() {
+        return dispatchOffUsEnabled;
     }
 
-    public void setRabbitQueueOffUs(String rabbitQueueOffUs) {
-        this.rabbitQueueOffUs = rabbitQueueOffUs;
+    public void setDispatchOffUsEnabled(boolean dispatchOffUsEnabled) {
+        this.dispatchOffUsEnabled = dispatchOffUsEnabled;
     }
 
-    public String getRabbitQueueInvalid() {
-        return rabbitQueueInvalid;
+    public boolean isDispatchInvalidEnabled() {
+        return dispatchInvalidEnabled;
     }
 
-    public void setRabbitQueueInvalid(String rabbitQueueInvalid) {
-        this.rabbitQueueInvalid = rabbitQueueInvalid;
-    }
-
-    public String getRabbitRoutingKeyOnUs() {
-        return rabbitRoutingKeyOnUs;
-    }
-
-    public void setRabbitRoutingKeyOnUs(String rabbitRoutingKeyOnUs) {
-        this.rabbitRoutingKeyOnUs = rabbitRoutingKeyOnUs;
-    }
-
-    public String getRabbitRoutingKeyOffUs() {
-        return rabbitRoutingKeyOffUs;
-    }
-
-    public void setRabbitRoutingKeyOffUs(String rabbitRoutingKeyOffUs) {
-        this.rabbitRoutingKeyOffUs = rabbitRoutingKeyOffUs;
-    }
-
-    public String getRabbitRoutingKeyInvalid() {
-        return rabbitRoutingKeyInvalid;
-    }
-
-    public void setRabbitRoutingKeyInvalid(String rabbitRoutingKeyInvalid) {
-        this.rabbitRoutingKeyInvalid = rabbitRoutingKeyInvalid;
+    public void setDispatchInvalidEnabled(boolean dispatchInvalidEnabled) {
+        this.dispatchInvalidEnabled = dispatchInvalidEnabled;
     }
 
     public String getTariffGrpcHost() {
@@ -357,3 +330,4 @@ public class FileReceptionProperties {
         this.pubsubRoutingKeyClearingOutbound = pubsubRoutingKeyClearingOutbound;
     }
 }
+

@@ -1,5 +1,7 @@
 # BanQuito File Reception Service
 
+> Nota de arquitectura actual: RabbitMQ fue reemplazado por Google Cloud Pub/Sub como broker administrado de nube. El bounded context objetivo de este microservicio es ingesta de archivos: recibir, validar estructura, registrar lote y publicar eventos. El procesamiento/dispatch debe migrarse a un consumidor dedicado.
+
 Microservicio del Switch encargado de recibir archivos de pagos masivos, validar su estructura, registrar el lote y publicar cada línea en RabbitMQ. El mismo despliegue contiene consumidores que procesan las líneas On-Us, Off-Us e inválidas.
 
 La documentación adicional está disponible en:
