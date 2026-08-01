@@ -1,10 +1,13 @@
 package ec.edu.espe.switchpayments.switchbatch.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -30,5 +33,35 @@ class FileReceptionControllerTest {
         var response = new FileReceptionController(service).receiveBatch(file, "NOMINA", "0912345678");
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+    }
+
+    @Test
+    void returnsBadRequestWhenServiceThrowsIllegalArgumentException() throws Exception {
+        IFileReceptionService service = org.mockito.Mockito.mock(IFileReceptionService.class);
+        MockMultipartFile file = new MockMultipartFile("file", "archivo.csv", "text/csv", "data".getBytes());
+        when(service.receive(file, "NOMINA", "0912345678"))
+                .thenThrow(new IllegalArgumentException("Tipo de servicio invalido"));
+
+        var response = new FileReceptionController(service).receiveBatch(file, "NOMINA", "0912345678");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void returnsBadRequestWhenServiceThrowsIOException() throws Exception {
+        IFileReceptionService service = org.mockito.Mockito.mock(IFileReceptionService.class);
+        MockMultipartFile file = new MockMultipartFile("file", "archivo.csv", "text/csv", "data".getBytes());
+        when(service.receive(file, "NOMINA", "0912345678")).thenThrow(new IOException("disco lleno"));
+
+        var response = new FileReceptionController(service).receiveBatch(file, "NOMINA", "0912345678");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void healthReturnsUpStatus() {
+        IFileReceptionService service = org.mockito.Mockito.mock(IFileReceptionService.class);
+
+        assertThat(new FileReceptionController(service).health().status()).isEqualTo("UP");
     }
 }
