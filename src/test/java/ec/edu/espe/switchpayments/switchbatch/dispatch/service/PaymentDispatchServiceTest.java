@@ -2,6 +2,7 @@ package ec.edu.espe.switchpayments.switchbatch.dispatch.service;
 
 import com.mongodb.client.result.UpdateResult;
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
+import ec.edu.espe.switchpayments.switchbatch.dispatch.client.ClearinghouseClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.client.NotificationGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.client.TariffGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.OffUsClearingMessage;
@@ -11,7 +12,6 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatc
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
-import ec.edu.espe.switchpayments.switchbatch.service.impl.PubSubClearingPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,7 +53,7 @@ class PaymentDispatchServiceTest {
     @Mock
     private NotificationGrpcClient notificationClient;
     @Mock
-    private PubSubClearingPublisher clearingPublisher;
+    private ClearinghouseClient clearinghouseClient;
 
     private FileReceptionProperties properties;
     private PaymentDispatchService dispatchService;
@@ -64,7 +64,7 @@ class PaymentDispatchServiceTest {
         properties.setCorporateAccountNumber("0000000000");
 
         dispatchService = new PaymentDispatchService(detailRepository, mongoTemplate, coreBankingClient,
-                tariffClient, notificationClient, clearingPublisher, properties);
+                tariffClient, notificationClient, clearinghouseClient, properties);
 
         when(detailRepository.save(any(PaymentDetail.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -108,13 +108,13 @@ class PaymentDispatchServiceTest {
     }
 
     @Test
-    void processOffUsLinePublishesClearingMessageAndMarksCleared() {
+    void processOffUsLineSendsClearingMessageViaGrpcAndMarksCleared() {
         BatchLineMessage message = buildMessage(BATCH_1, 2, "002", "OFF_US", "0009999999", new BigDecimal("200.00"));
 
         dispatchService.processOffUsLine(message);
 
         ArgumentCaptor<OffUsClearingMessage> clearingCaptor = ArgumentCaptor.forClass(OffUsClearingMessage.class);
-        verify(clearingPublisher).publish(clearingCaptor.capture());
+        verify(clearinghouseClient).sendOffUsPayment(clearingCaptor.capture());
 
         OffUsClearingMessage adapted = clearingCaptor.getValue();
         assertThat(adapted.getRoutingCode()).isEqualTo("002");
@@ -133,7 +133,7 @@ class PaymentDispatchServiceTest {
         dispatchService.processInvalidLine(message);
 
         verify(coreBankingClient, never()).batchCredit(any(), any(), any(), any(), any(), any());
-        verify(clearingPublisher, never()).publish(any());
+        verify(clearinghouseClient, never()).sendOffUsPayment(any());
 
         ArgumentCaptor<PaymentDetail> captor = ArgumentCaptor.forClass(PaymentDetail.class);
         verify(detailRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());

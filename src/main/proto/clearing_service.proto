@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package banquito.clearing.v2;
+
+option java_multiple_files = true;
+option java_package = "ec.edu.espe.switchpayments.switchbatch.grpc.clearing";
+option java_outer_classname = "ClearingServiceProto";
+
+// Cliente gRPC hacia banquito-clearinghouse-service. Contrato identico al expuesto por
+// ClearingGrpcService en clearinghouse-service y al ya usado por payment-line-subscriber-service
+// (ClearinghouseClient.sendOffUsPayment). Fase 5 Parte 2 (TAREA B): reemplaza la publicacion
+// Pub/Sub legacy hacia banquito-clearing-events, que no tiene consumidor Java activo.
+service ClearingService {
+  rpc RegisterOffUsPayment(OffUsPaymentRequest) returns (OffUsPaymentResponse);
+  rpc ReceiveInboundPayment(InboundPaymentRequest) returns (InboundPaymentResponse);
+}
+
+message OffUsPaymentRequest {
+  string batch_id = 1;
+  string transaction_id = 2;
+  string routing_code = 3;
+  string origin_account = 4;
+  string destination_account = 5;
+  string amount = 6;
+  string currency = 7;
+  string concept = 8;
+  string value_date = 9;
+}
+
+message OffUsPaymentResponse {
+  string status = 1;
+  string batch_id = 2;
+  string transaction_id = 3;
+  string message = 4;
+}
+
+message InboundPaymentRequest {
+  string origin_bank_code = 1;
+  string origin_transaction_id = 2;
+  string destination_account_number = 3;
+  string amount = 4;
+  string currency = 5;
+  string concept = 6;
+  string beneficiary_name = 7;
+  string value_date = 8;
+}
+
+message InboundPaymentResponse {
+  string status = 1;                  // ACCEPTED | REJECTED
+  string banquito_transaction_id = 2;
+  string message = 3;
+}

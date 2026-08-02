@@ -41,6 +41,8 @@ public class FileReceptionProperties {
     private String pubsubRoutingKeyOffUs = "offus";
     private String pubsubRoutingKeyInvalid = "invalid";
     private String pubsubRoutingKeyClearingOutbound = "clearing.outbound";
+    private String clearinghouseGrpcHost = "localhost";
+    private int clearinghouseGrpcPort = 9094;
 
     public int getDuplicateWindowDays() {
         return duplicateWindowDays;
@@ -328,6 +330,22 @@ public class FileReceptionProperties {
 
     public void setPubsubRoutingKeyClearingOutbound(String pubsubRoutingKeyClearingOutbound) {
         this.pubsubRoutingKeyClearingOutbound = pubsubRoutingKeyClearingOutbound;
+    }
+
+    public String getClearinghouseGrpcHost() {
+        return clearinghouseGrpcHost;
+    }
+
+    public void setClearinghouseGrpcHost(String clearinghouseGrpcHost) {
+        this.clearinghouseGrpcHost = clearinghouseGrpcHost;
+    }
+
+    public int getClearinghouseGrpcPort() {
+        return clearinghouseGrpcPort;
+    }
+
+    public void setClearinghouseGrpcPort(int clearinghouseGrpcPort) {
+        this.clearinghouseGrpcPort = clearinghouseGrpcPort;
     }
 }
 

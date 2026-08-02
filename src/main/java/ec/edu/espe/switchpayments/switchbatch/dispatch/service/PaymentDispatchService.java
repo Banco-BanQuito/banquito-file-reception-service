@@ -7,6 +7,7 @@ import com.mongodb.client.result.UpdateResult;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcRequest;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffCalculationGrpcResponse;
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
+import ec.edu.espe.switchpayments.switchbatch.dispatch.client.ClearinghouseClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.client.NotificationGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.client.TariffGrpcClient;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.model.OffUsClearingMessage;
@@ -15,7 +16,6 @@ import ec.edu.espe.switchpayments.switchbatch.dispatch.model.PaymentDetail;
 import ec.edu.espe.switchpayments.switchbatch.dispatch.repository.PaymentDispatchDetailRepository;
 import ec.edu.espe.switchpayments.switchbatch.dto.BatchLineMessage;
 import ec.edu.espe.switchpayments.switchbatch.service.ICoreBankingClient;
-import ec.edu.espe.switchpayments.switchbatch.service.impl.PubSubClearingPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -61,7 +61,7 @@ public class PaymentDispatchService {
     private final ICoreBankingClient coreBankingClient;
     private final TariffGrpcClient tariffClient;
     private final NotificationGrpcClient notificationClient;
-    private final PubSubClearingPublisher clearingPublisher;
+    private final ClearinghouseClient clearinghouseClient;
     private final FileReceptionProperties properties;
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> debitOutcomes = new ConcurrentHashMap<>();
@@ -74,14 +74,14 @@ public class PaymentDispatchService {
                                    ICoreBankingClient coreBankingClient,
                                    TariffGrpcClient tariffClient,
                                    NotificationGrpcClient notificationClient,
-                                   PubSubClearingPublisher clearingPublisher,
+                                   ClearinghouseClient clearinghouseClient,
                                    FileReceptionProperties properties) {
         this.detailRepository = detailRepository;
         this.mongoTemplate = mongoTemplate;
         this.coreBankingClient = coreBankingClient;
         this.tariffClient = tariffClient;
         this.notificationClient = notificationClient;
-        this.clearingPublisher = clearingPublisher;
+        this.clearinghouseClient = clearinghouseClient;
         this.properties = properties;
     }
 
@@ -127,7 +127,13 @@ public class PaymentDispatchService {
         String errorMessage = null;
         try {
             OffUsClearingMessage clearingMessage = adaptForClearingHouse(message, detail);
-            clearingPublisher.publish(clearingMessage);
+            // Fase 5 Parte 2 (TAREA B): entrega directa por gRPC a clearinghouse-service.
+            // Reemplaza la publicacion a Pub/Sub (banquito-clearing-events / clearing-outbound-sub),
+            // topico que no tiene ningun consumidor Java activo hoy: ClearingQueueListener en
+            // clearinghouse-service esta deshabilitado por defecto y ademas escucha una
+            // subscripcion distinta (payment-lines-offus-sub). Ese publish dejaba el pago Off-Us
+            // sin liquidar nunca contra Nostro.
+            clearinghouseClient.sendOffUsPayment(clearingMessage);
             success = true;
         } catch (Exception e) {
             log.error("Off-Us routing error batchId={} line={}: {}", message.batchId(), message.lineNumber(), e.getMessage());

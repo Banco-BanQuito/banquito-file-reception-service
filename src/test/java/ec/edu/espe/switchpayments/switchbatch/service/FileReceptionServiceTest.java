@@ -27,12 +27,14 @@ import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
 import ec.edu.espe.switchpayments.switchbatch.repository.BatchStatusLogRepository;
+import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchLineRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
 import ec.edu.espe.switchpayments.switchbatch.service.impl.CsvBatchParserImpl;
 import ec.edu.espe.switchpayments.switchbatch.service.impl.FileReceptionServiceImpl;
 
 class FileReceptionServiceTest {
     private final PaymentBatchRepository paymentBatchRepository = org.mockito.Mockito.mock(PaymentBatchRepository.class);
+    private final PaymentBatchLineRepository paymentBatchLineRepository = org.mockito.Mockito.mock(PaymentBatchLineRepository.class);
     private final BatchStatusLogRepository batchStatusLogRepository = org.mockito.Mockito.mock(BatchStatusLogRepository.class);
     private final IBusinessDayService businessDayService = org.mockito.Mockito.mock(IBusinessDayService.class);
     private final ICoreBankingClient coreBankingClient = org.mockito.Mockito.mock(ICoreBankingClient.class);
@@ -47,6 +49,7 @@ class FileReceptionServiceTest {
                 new CsvBatchParserImpl(properties),
                 properties,
                 paymentBatchRepository,
+                paymentBatchLineRepository,
                 batchStatusLogRepository,
                 businessDayService,
                 coreBankingClient,

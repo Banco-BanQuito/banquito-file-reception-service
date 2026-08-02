@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 import com.banquito.payswitch.notification.NotificationServiceGrpc;
 import ec.edu.espe.banquito.banquitotariffservice.grpc.TariffGrpcServiceGrpc;
+import ec.edu.espe.switchpayments.switchbatch.grpc.clearing.ClearingServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -35,5 +36,21 @@ public class GrpcClientConfig {
     @Bean
     public NotificationServiceGrpc.NotificationServiceBlockingStub notificationGrpcStub(ManagedChannel notificationManagedChannel) {
         return NotificationServiceGrpc.newBlockingStub(notificationManagedChannel);
+    }
+
+    // Fase 5 Parte 2 (TAREA B): canal gRPC hacia banquito-clearinghouse-service, reemplazando
+    // la publicacion Pub/Sub legacy (PubSubClearingPublisher / banquito-clearing-events), que
+    // no tiene consumidor Java activo (ver ClearinghouseClient en este mismo servicio).
+    @Bean(destroyMethod = "shutdown")
+    public ManagedChannel clearinghouseManagedChannel(FileReceptionProperties properties) {
+        return ManagedChannelBuilder
+                .forAddress(properties.getClearinghouseGrpcHost(), properties.getClearinghouseGrpcPort())
+                .usePlaintext()
+                .build();
+    }
+
+    @Bean
+    public ClearingServiceGrpc.ClearingServiceBlockingStub clearingGrpcStub(ManagedChannel clearinghouseManagedChannel) {
+        return ClearingServiceGrpc.newBlockingStub(clearinghouseManagedChannel);
     }
 }
