@@ -17,15 +17,14 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
 import ec.edu.espe.switchpayments.switchbatch.dto.FileReceptionResponse;
-import ec.edu.espe.switchpayments.switchbatch.event.PaymentLinesReadyEvent;
 import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
+import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchLineDocument;
 import ec.edu.espe.switchpayments.switchbatch.repository.BatchStatusLogRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchLineRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
@@ -38,7 +37,6 @@ class FileReceptionServiceTest {
     private final BatchStatusLogRepository batchStatusLogRepository = org.mockito.Mockito.mock(BatchStatusLogRepository.class);
     private final IBusinessDayService businessDayService = org.mockito.Mockito.mock(IBusinessDayService.class);
     private final ICoreBankingClient coreBankingClient = org.mockito.Mockito.mock(ICoreBankingClient.class);
-    private final ApplicationEventPublisher eventPublisher = org.mockito.Mockito.mock(ApplicationEventPublisher.class);
     private FileReceptionServiceImpl service;
     @BeforeEach
     void setUp() {
@@ -53,7 +51,6 @@ class FileReceptionServiceTest {
                 batchStatusLogRepository,
                 businessDayService,
                 coreBankingClient,
-                eventPublisher,
                 Clock.fixed(Instant.parse("2026-05-30T14:00:00Z"), ZoneId.systemDefault()));
         when(coreBankingClient.hasSufficientBalance(anyString(), any(java.math.BigDecimal.class)))
                 .thenReturn(true);
@@ -61,24 +58,25 @@ class FileReceptionServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(batchStatusLogRepository.save(any(BatchStatusLog.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(paymentBatchLineRepository.saveAll(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(businessDayService.isBusinessDay(any(LocalDate.class))).thenReturn(true);
         when(businessDayService.nextBusinessDay(any(LocalDate.class)))
                 .thenAnswer(invocation -> invocation.<LocalDate>getArgument(0).plusDays(1));
     }
     @Test
-    void receive_debeResponder202_yPublicarEvento_cuandoArchivoEsValido() throws Exception {
+    void receive_debeResponder202_yGuardarLineas_cuandoArchivoEsValido() throws Exception {
         when(paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
                 anyString(), anyString(), any(), any())).thenReturn(false);
 
         FileReceptionResponse response = service.receive(file(validCsvOneLine()), "NOMINA", "0912345678");
         assertEquals("EN_PROCESO", response.status());
 
-        ArgumentCaptor<PaymentLinesReadyEvent> eventCaptor = ArgumentCaptor.forClass(PaymentLinesReadyEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-        PaymentLinesReadyEvent event = eventCaptor.getValue();
-        assertEquals(1, event.batch().lines().size());
-        assertEquals("001", event.batch().lines().get(0).routingCode());
-        assertEquals(true, event.duplicateValid());
+        ArgumentCaptor<Iterable<PaymentBatchLineDocument>> linesCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(paymentBatchLineRepository).saveAll(linesCaptor.capture());
+        List<PaymentBatchLineDocument> lines = toList(linesCaptor.getValue());
+        assertEquals(1, lines.size());
+        assertEquals("001", lines.get(0).getRoutingCode());
     }
     @Test
     void receive_debeLanzarExcepcion_yNOPublicarEvento_cuandoSaldoEsInsuficiente() {
@@ -90,7 +88,7 @@ class FileReceptionServiceTest {
                 () -> service.receive(insufficientFundsFile, "NOMINA", "0912345678"));
 
         verify(paymentBatchRepository, never()).save(any(PaymentBatchDocument.class));
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(paymentBatchLineRepository, never()).saveAll(any());
     }
 
     @Test
@@ -102,18 +100,18 @@ class FileReceptionServiceTest {
         assertThrows(DuplicateBatchException.class,
                 () -> service.receive(duplicateFile, "NOMINA", "0912345678"));
 
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(paymentBatchLineRepository).saveAll(any());
     }
     @Test
-    void receive_debePublicarEventoConTodasLasLineas_sinFiltrarPorRoutingCode() throws Exception {
+    void receive_debeGuardarTodasLasLineas_sinFiltrarPorRoutingCode() throws Exception {
         when(paymentBatchRepository.existsByFileNameAndFileHashAndStatusInAndReceivedAtAfter(
                 anyString(), anyString(), any(), any())).thenReturn(false);
         service.receive(file(validCsvWithTwoLines()), "NOMINA", "0912345678");
-        ArgumentCaptor<PaymentLinesReadyEvent> eventCaptor = ArgumentCaptor.forClass(PaymentLinesReadyEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        ArgumentCaptor<Iterable<PaymentBatchLineDocument>> linesCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(paymentBatchLineRepository).saveAll(linesCaptor.capture());
 
-        List<String> routingCodes = eventCaptor.getValue().batch().lines().stream()
-                .map(ec.edu.espe.switchpayments.switchbatch.dto.ParsedPaymentLine::routingCode)
+        List<String> routingCodes = toList(linesCaptor.getValue()).stream()
+                .map(PaymentBatchLineDocument::getRoutingCode)
                 .toList();
         assertEquals(2, routingCodes.size());
         assertEquals(List.of("001", "002"), routingCodes);
@@ -127,6 +125,12 @@ class FileReceptionServiceTest {
         ArgumentCaptor<PaymentBatchDocument> batchCaptor = ArgumentCaptor.forClass(PaymentBatchDocument.class);
         verify(paymentBatchRepository).save(batchCaptor.capture());
         assertEquals("EN_PROCESO", batchCaptor.getValue().getStatus());
+    }
+
+    private List<PaymentBatchLineDocument> toList(Iterable<PaymentBatchLineDocument> documents) {
+        java.util.ArrayList<PaymentBatchLineDocument> result = new java.util.ArrayList<>();
+        documents.forEach(result::add);
+        return result;
     }
 
     private MockMultipartFile file(String content) {
