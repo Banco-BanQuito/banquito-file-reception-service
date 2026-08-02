@@ -1,10 +1,7 @@
 package ec.edu.espe.switchpayments.switchbatch.service.impl;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,62 +147,6 @@ public class CoreBankingClientImpl implements ICoreBankingClient {
             logger.warn("No se pudo consultar saldo de cuenta {} en Core: {}", accountNumber, e.getMessage());
             return false;
         }
-    }
-
-    @Override
-    public void batchCredit(String batchId, String originAccountNumber, String accountDestination, BigDecimal amount,
-                            String reference, String transactionUuid) {
-        String txUuid = (transactionUuid != null && !transactionUuid.isBlank())
-                ? transactionUuid
-                : UUID.randomUUID().toString();
-
-        Map<String, Object> credit = new HashMap<>();
-        credit.put("accountNumber", accountDestination);
-        credit.put("amount", amount);
-        credit.put("reference", reference);
-        credit.put("transactionUuid", txUuid);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("batchId", batchId);
-        body.put("originAccountNumber", originAccountNumber);
-        body.put("credits", List.of(credit));
-
-        restClient.post()
-                .uri(properties.getCoreBatchCreditEndpoint())
-                .body(body)
-                .retrieve()
-                .toBodilessEntity();
-    }
-
-    @Override
-    public void corporateDebit(String batchId, String accountNumber, BigDecimal totalAmount, BigDecimal commissionAmount) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("batchId", batchId);
-        body.put("accountNumber", accountNumber);
-        body.put("transactionUuid", UUID.randomUUID().toString());
-        body.put("totalAmount", totalAmount);
-        body.put("commissionAmount", commissionAmount);
-
-        restClient.post()
-                .uri(properties.getCoreCorporateDebitEndpoint())
-                .body(body)
-                .retrieve()
-                .toBodilessEntity();
-    }
-
-    @Override
-    public void corporateRefund(String batchId, String accountNumber, BigDecimal refundAmount) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("batchId", batchId);
-        body.put("accountNumber", accountNumber);
-        body.put("transactionUuid", UUID.randomUUID().toString());
-        body.put("refundAmount", refundAmount);
-
-        restClient.post()
-                .uri(properties.getCoreCorporateRefundEndpoint())
-                .body(body)
-                .retrieve()
-                .toBodilessEntity();
     }
 
 }

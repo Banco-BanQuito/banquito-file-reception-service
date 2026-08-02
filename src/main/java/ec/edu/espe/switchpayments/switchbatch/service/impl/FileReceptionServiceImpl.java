@@ -13,14 +13,12 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
 import ec.edu.espe.switchpayments.switchbatch.dto.FileReceptionResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.ParsedBatch;
-import ec.edu.espe.switchpayments.switchbatch.event.PaymentLinesReadyEvent;
 import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
@@ -45,7 +43,6 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     private final BatchStatusLogRepository batchStatusLogRepository;
     private final IBusinessDayService businessDayService;
     private final ICoreBankingClient coreBankingClient;
-    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     @Autowired
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
@@ -54,10 +51,9 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
                                     PaymentBatchLineRepository paymentBatchLineRepository,
                                     BatchStatusLogRepository batchStatusLogRepository,
                                     IBusinessDayService businessDayService,
-                                    ICoreBankingClient coreBankingClient,
-                                    ApplicationEventPublisher eventPublisher) {
+                                    ICoreBankingClient coreBankingClient) {
         this(csvBatchParser, properties, paymentBatchRepository, paymentBatchLineRepository, batchStatusLogRepository,
-                businessDayService, coreBankingClient, eventPublisher, Clock.systemDefaultZone());
+                businessDayService, coreBankingClient, Clock.systemDefaultZone());
     }
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
                                     FileReceptionProperties properties,
@@ -66,7 +62,6 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
                                     BatchStatusLogRepository batchStatusLogRepository,
                                     IBusinessDayService businessDayService,
                                     ICoreBankingClient coreBankingClient,
-                                    ApplicationEventPublisher eventPublisher,
                                     Clock clock) {
         this.csvBatchParser = csvBatchParser;
         this.properties = properties;
@@ -75,7 +70,6 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         this.batchStatusLogRepository = batchStatusLogRepository;
         this.businessDayService = businessDayService;
         this.coreBankingClient = coreBankingClient;
-        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
     @Override
@@ -100,14 +94,13 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
             throw new DuplicateBatchException("Lote duplicado");
         }
 
-        logger.info("Lote {} aceptado estructuralmente ({} líneas). Publicando evento para procesamiento asíncrono.",
+        logger.info("Lote {} aceptado estructuralmente ({} lineas). Registro disponible para clasificacion externa.",
                 batchId, batch.declaredRecords());
-        eventPublisher.publishEvent(new PaymentLinesReadyEvent(batchId, schedule.scheduledProcessAt(), batch, duplicateValid));
 
         return new FileReceptionResponse(
                 batchId,
                 "EN_PROCESO",
-                "Lote recibido exitosamente. " + batch.declaredRecords() + " línea(s) serán procesadas.",
+                "Lote recibido exitosamente. " + batch.declaredRecords() + " linea(s) quedaron registradas.",
                 receivedAt,
                 batch.declaredRecords(),
                 batch.declaredAmount());

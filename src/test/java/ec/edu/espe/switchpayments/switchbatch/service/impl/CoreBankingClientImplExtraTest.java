@@ -7,11 +7,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import java.math.BigDecimal;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.once;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -60,25 +57,4 @@ class CoreBankingClientImplExtraTest {
         server.verify();
     }
 
-    @Test
-    void batchCreditPostsExpectedPayload() {
-        server.expect(once(), requestTo("http://core.test/api/v2/payments/batch-credit"))
-                .andExpect(method(org.springframework.http.HttpMethod.POST))
-                .andRespond(withSuccess());
-
-        client.batchCredit("batch-1", "0001111111", "1234567890", new BigDecimal("50.00"), "Nomina", "tx-1");
-
-        server.verify();
-    }
-
-    @Test
-    void corporateDebitPostsExpectedPayload() {
-        server.expect(once(), requestTo("http://core.test/api/v2/payments/corporate-debit"))
-                .andExpect(method(org.springframework.http.HttpMethod.POST))
-                .andRespond(withSuccess());
-
-        client.corporateDebit("batch-1", "1234567890", new BigDecimal("500.00"), new BigDecimal("0.60"));
-
-        server.verify();
-    }
 }
