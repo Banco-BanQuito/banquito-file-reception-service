@@ -5,12 +5,15 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import ec.edu.espe.switchpayments.switchbatch.dto.BatchStatusResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.FileReceptionResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.HealthResponse;
 import ec.edu.espe.switchpayments.switchbatch.service.IFileReceptionService;
@@ -41,7 +44,16 @@ public class FileReceptionController {
         }
     }
 
-    @org.springframework.web.bind.annotation.GetMapping("/health")
+    @GetMapping("/batches/{batchId}/status")
+    public ResponseEntity<BatchStatusResponse> getBatchStatus(@PathVariable String batchId) {
+        try {
+            return ResponseEntity.ok(fileReceptionService.getStatus(batchId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/health")
     public HealthResponse health() {
         return new HealthResponse("UP", "file-reception-service", "2.0");
     }

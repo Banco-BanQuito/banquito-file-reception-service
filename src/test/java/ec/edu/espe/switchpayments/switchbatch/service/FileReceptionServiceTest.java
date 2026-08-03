@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
@@ -23,13 +24,16 @@ import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
 import ec.edu.espe.switchpayments.switchbatch.repository.BatchStatusLogRepository;
+import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchLineRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
 import ec.edu.espe.switchpayments.switchbatch.service.impl.CsvBatchParserImpl;
 import ec.edu.espe.switchpayments.switchbatch.service.impl.FileReceptionServiceImpl;
 
 class FileReceptionServiceTest {
     private final PaymentBatchRepository paymentBatchRepository = org.mockito.Mockito.mock(PaymentBatchRepository.class);
+    private final PaymentBatchLineRepository paymentBatchLineRepository = org.mockito.Mockito.mock(PaymentBatchLineRepository.class);
     private final BatchStatusLogRepository batchStatusLogRepository = org.mockito.Mockito.mock(BatchStatusLogRepository.class);
+    private final MongoTemplate mongoTemplate = org.mockito.Mockito.mock(MongoTemplate.class);
     private final IBusinessDayService businessDayService = org.mockito.Mockito.mock(IBusinessDayService.class);
     private final ICoreBankingClient coreBankingClient = org.mockito.Mockito.mock(ICoreBankingClient.class);
     private final IBatchLineRegistrationService batchLineRegistrationService =
@@ -44,7 +48,9 @@ class FileReceptionServiceTest {
                 new CsvBatchParserImpl(properties),
                 properties,
                 paymentBatchRepository,
+                paymentBatchLineRepository,
                 batchStatusLogRepository,
+                mongoTemplate,
                 businessDayService,
                 coreBankingClient,
                 batchLineRegistrationService,
@@ -109,6 +115,23 @@ class FileReceptionServiceTest {
         ArgumentCaptor<PaymentBatchDocument> batchCaptor = ArgumentCaptor.forClass(PaymentBatchDocument.class);
         verify(paymentBatchRepository).save(batchCaptor.capture());
         assertEquals("RECEIVING", batchCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void getStatus_debeResponderProcessing_cuandoLoteEstaRegistrandoLineas() {
+        PaymentBatchDocument batch = new PaymentBatchDocument();
+        batch.setId("batch-1");
+        batch.setStatus("RECEIVING");
+        batch.setDeclaredTotalRecords(13000);
+        batch.setReceivedAt(Instant.parse("2026-05-30T14:00:00Z"));
+        when(paymentBatchRepository.findById("batch-1")).thenReturn(java.util.Optional.of(batch));
+        when(paymentBatchLineRepository.countByBatchId("batch-1")).thenReturn(500L);
+
+        var response = service.getStatus("batch-1");
+
+        assertEquals("PROCESSING", response.status());
+        assertEquals(13000, response.declaredTotalRecords());
+        assertEquals(13000, response.inProcessRecords());
     }
 
     private MockMultipartFile file(String content) {

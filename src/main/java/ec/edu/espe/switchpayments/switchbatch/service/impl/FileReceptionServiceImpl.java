@@ -1,21 +1,29 @@
 package ec.edu.espe.switchpayments.switchbatch.service.impl;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import java.util.UUID;
 
+import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import ec.edu.espe.switchpayments.switchbatch.dto.BatchStatusResponse;
 import ec.edu.espe.switchpayments.switchbatch.config.FileReceptionProperties;
 import ec.edu.espe.switchpayments.switchbatch.dto.FileReceptionResponse;
 import ec.edu.espe.switchpayments.switchbatch.dto.ParsedBatch;
@@ -23,6 +31,7 @@ import ec.edu.espe.switchpayments.switchbatch.exception.DuplicateBatchException;
 import ec.edu.espe.switchpayments.switchbatch.model.BatchStatusLog;
 import ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument;
 import ec.edu.espe.switchpayments.switchbatch.repository.BatchStatusLogRepository;
+import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchLineRepository;
 import ec.edu.espe.switchpayments.switchbatch.repository.PaymentBatchRepository;
 import ec.edu.espe.switchpayments.switchbatch.service.IBatchLineRegistrationService;
 import ec.edu.espe.switchpayments.switchbatch.service.IBusinessDayService;
@@ -38,7 +47,9 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     private final ICsvBatchParser csvBatchParser;
     private final FileReceptionProperties properties;
     private final PaymentBatchRepository paymentBatchRepository;
+    private final PaymentBatchLineRepository paymentBatchLineRepository;
     private final BatchStatusLogRepository batchStatusLogRepository;
+    private final MongoTemplate mongoTemplate;
     private final IBusinessDayService businessDayService;
     private final ICoreBankingClient coreBankingClient;
     private final IBatchLineRegistrationService batchLineRegistrationService;
@@ -47,17 +58,22 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
                                     FileReceptionProperties properties,
                                     PaymentBatchRepository paymentBatchRepository,
+                                    PaymentBatchLineRepository paymentBatchLineRepository,
                                     BatchStatusLogRepository batchStatusLogRepository,
+                                    MongoTemplate mongoTemplate,
                                     IBusinessDayService businessDayService,
                                     ICoreBankingClient coreBankingClient,
                                     IBatchLineRegistrationService batchLineRegistrationService) {
-        this(csvBatchParser, properties, paymentBatchRepository, batchStatusLogRepository,
+        this(csvBatchParser, properties, paymentBatchRepository, paymentBatchLineRepository, batchStatusLogRepository,
+                mongoTemplate,
                 businessDayService, coreBankingClient, batchLineRegistrationService, Clock.systemDefaultZone());
     }
     public FileReceptionServiceImpl(ICsvBatchParser csvBatchParser,
                                     FileReceptionProperties properties,
                                     PaymentBatchRepository paymentBatchRepository,
+                                    PaymentBatchLineRepository paymentBatchLineRepository,
                                     BatchStatusLogRepository batchStatusLogRepository,
+                                    MongoTemplate mongoTemplate,
                                     IBusinessDayService businessDayService,
                                     ICoreBankingClient coreBankingClient,
                                     IBatchLineRegistrationService batchLineRegistrationService,
@@ -65,7 +81,9 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
         this.csvBatchParser = csvBatchParser;
         this.properties = properties;
         this.paymentBatchRepository = paymentBatchRepository;
+        this.paymentBatchLineRepository = paymentBatchLineRepository;
         this.batchStatusLogRepository = batchStatusLogRepository;
+        this.mongoTemplate = mongoTemplate;
         this.businessDayService = businessDayService;
         this.coreBankingClient = coreBankingClient;
         this.batchLineRegistrationService = batchLineRegistrationService;
@@ -104,6 +122,21 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
                 batch.declaredRecords(),
                 batch.declaredAmount());
     }
+
+    @Override
+    public BatchStatusResponse getStatus(String batchId) {
+        Document dispatchBatch = mongoTemplate.findOne(
+                Query.query(Criteria.where("batchId").is(batchId)),
+                Document.class,
+                "payment_dispatch_batch");
+        if (dispatchBatch != null) {
+            return dispatchStatus(dispatchBatch);
+        }
+        PaymentBatchDocument batch = paymentBatchRepository.findById(batchId)
+                .orElseThrow(() -> new IllegalArgumentException("Lote no encontrado: " + batchId));
+        return initialStatus(batch);
+    }
+
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("El archivo es obligatorio");
@@ -157,5 +190,107 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
                 .toInstant();
         return new IngestionSchedule("PROGRAMADO", scheduledProcessAt);
     }
+
+    private BatchStatusResponse initialStatus(PaymentBatchDocument batch) {
+        int declared = safeInt(batch.getDeclaredTotalRecords());
+        int registered = Math.toIntExact(Math.min(paymentBatchLineRepository.countByBatchId(batch.getId()), Integer.MAX_VALUE));
+        String status = normalizeStatus(batch.getStatus());
+        String message = "Registrando lineas del archivo: " + registered + "/" + declared;
+        return new BatchStatusResponse(
+                batch.getId(),
+                status,
+                declared,
+                0,
+                0,
+                Math.max(declared, 0),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                batch.getReceivedAt(),
+                null,
+                null,
+                message,
+                null);
+    }
+
+    private BatchStatusResponse dispatchStatus(Document batch) {
+        int declared = intValue(batch.get("declaredTotalRecords"));
+        int successful = intValue(batch.get("successfulRecords"));
+        int rejected = intValue(batch.get("rejectedRecords"));
+        int inProcess = Math.max(declared - successful - rejected, 0);
+        return new BatchStatusResponse(
+                textValue(batch.get("batchId")),
+                normalizeStatus(textValue(batch.get("status"))),
+                declared,
+                successful,
+                rejected,
+                inProcess,
+                decimalValue(batch.get("successfulAmount")),
+                decimalValue(batch.get("rejectedAmount")),
+                instantValue(batch.get("createdAt")),
+                instantValue(batch.get("updatedAt")),
+                instantValue(batch.get("completedAt")),
+                null,
+                textValue(batch.get("failureReason")));
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "UNKNOWN";
+        }
+        return switch (status.trim().toUpperCase()) {
+            case "RECEIVING", "EN_PROCESO", "CLASSIFYING", "CLASSIFIED", "PUBLISHING", "PUBLISHED" -> "PROCESSING";
+            case "PROGRAMADO", "SCHEDULED", "RECEIVED" -> "RECEIVED";
+            case "COMPLETANDO" -> "COMPLETING";
+            case "COMPLETADO", "FINALIZADO", "COMPLETED" -> "COMPLETED";
+            case "FAILED", "FALLIDO", "ERROR", "INGESTION_FAILED", "CLASSIFICATION_FAILED", "PUBLISH_FAILED" -> "FAILED";
+            case "RECHAZADO", "REJECTED", "DUPLICATE" -> "REJECTED";
+            default -> status.trim().toUpperCase();
+        };
+    }
+
+    private int safeInt(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private int intValue(Object value) {
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            return Integer.parseInt(s);
+        }
+        return 0;
+    }
+
+    private BigDecimal decimalValue(Object value) {
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
+        if (value instanceof Number n) {
+            return BigDecimal.valueOf(n.doubleValue());
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            return new BigDecimal(s);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String textValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Instant instantValue(Object value) {
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        if (value instanceof Date date) {
+            return date.toInstant();
+        }
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime.toInstant(ZoneOffset.UTC);
+        }
+        return null;
+    }
+
     private record IngestionSchedule(String status, Instant scheduledProcessAt) {}
 }
