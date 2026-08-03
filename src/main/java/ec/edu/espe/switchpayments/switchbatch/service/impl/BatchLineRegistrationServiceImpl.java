@@ -7,6 +7,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.BulkOperations.BulkMode;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -25,7 +26,7 @@ import ec.edu.espe.switchpayments.switchbatch.service.IBatchLineRegistrationServ
 public class BatchLineRegistrationServiceImpl implements IBatchLineRegistrationService {
 
     private static final Logger log = LoggerFactory.getLogger(BatchLineRegistrationServiceImpl.class);
-    private static final int BATCH_LINE_CHUNK_SIZE = 500;
+    private static final int BATCH_LINE_CHUNK_SIZE = 1000;
 
     private final PaymentBatchRepository paymentBatchRepository;
     private final PaymentBatchLineRepository paymentBatchLineRepository;
@@ -51,12 +52,12 @@ public class BatchLineRegistrationServiceImpl implements IBatchLineRegistrationS
             for (var line : batch.lines()) {
                 chunk.add(toDocument(batchId, line));
                 if (chunk.size() == BATCH_LINE_CHUNK_SIZE) {
-                    paymentBatchLineRepository.saveAll(chunk);
+                    insertChunk(chunk);
                     chunk.clear();
                 }
             }
             if (!chunk.isEmpty()) {
-                paymentBatchLineRepository.saveAll(chunk);
+                insertChunk(chunk);
             }
             markBatch(batchId, "RECEIVING", readyStatus);
             log.info("[INGESTION] Batch {} listo para el siguiente paso con estado {}", batchId, readyStatus);
@@ -64,6 +65,12 @@ public class BatchLineRegistrationServiceImpl implements IBatchLineRegistrationS
             log.error("[INGESTION] Error registrando lineas para batchId={}: {}", batchId, e.getMessage(), e);
             markBatch(batchId, "RECEIVING", "INGESTION_FAILED");
         }
+    }
+
+    private void insertChunk(List<PaymentBatchLineDocument> chunk) {
+        mongoTemplate.bulkOps(BulkMode.UNORDERED, PaymentBatchLineDocument.class)
+                .insert(chunk)
+                .execute();
     }
 
     private PaymentBatchLineDocument toDocument(String batchId, ec.edu.espe.switchpayments.switchbatch.dto.ParsedPaymentLine line) {
