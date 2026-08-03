@@ -64,4 +64,29 @@ class FileReceptionControllerTest {
 
         assertThat(new FileReceptionController(service).health().status()).isEqualTo("UP");
     }
+
+    @Test
+    void getBatchStatusReturnsOkWithBodyWhenBatchExists() {
+        IFileReceptionService service = org.mockito.Mockito.mock(IFileReceptionService.class);
+        var statusResponse = new ec.edu.espe.switchpayments.switchbatch.dto.BatchStatusResponse(
+                "batch-1", "PROCESSING", 10, 0, 0, 10,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.parse("2026-05-30T14:00:00Z"), null, null,
+                "Registrando lineas del archivo: 0/10", null);
+        when(service.getStatus("batch-1")).thenReturn(statusResponse);
+
+        var response = new FileReceptionController(service).getBatchStatus("batch-1");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().status()).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void getBatchStatusReturnsNotFoundWhenBatchDoesNotExist() {
+        IFileReceptionService service = org.mockito.Mockito.mock(IFileReceptionService.class);
+        when(service.getStatus("batch-x")).thenThrow(new IllegalArgumentException("Lote no encontrado: batch-x"));
+
+        var response = new FileReceptionController(service).getBatchStatus("batch-x");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
