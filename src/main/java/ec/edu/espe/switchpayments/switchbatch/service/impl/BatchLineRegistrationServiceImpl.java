@@ -6,6 +6,10 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -26,13 +30,16 @@ public class BatchLineRegistrationServiceImpl implements IBatchLineRegistrationS
     private final PaymentBatchRepository paymentBatchRepository;
     private final PaymentBatchLineRepository paymentBatchLineRepository;
     private final BatchStatusLogRepository batchStatusLogRepository;
+    private final MongoTemplate mongoTemplate;
 
     public BatchLineRegistrationServiceImpl(PaymentBatchRepository paymentBatchRepository,
                                             PaymentBatchLineRepository paymentBatchLineRepository,
-                                            BatchStatusLogRepository batchStatusLogRepository) {
+                                            BatchStatusLogRepository batchStatusLogRepository,
+                                            MongoTemplate mongoTemplate) {
         this.paymentBatchRepository = paymentBatchRepository;
         this.paymentBatchLineRepository = paymentBatchLineRepository;
         this.batchStatusLogRepository = batchStatusLogRepository;
+        this.mongoTemplate = mongoTemplate;
     }
 
     @Async
@@ -75,12 +82,14 @@ public class BatchLineRegistrationServiceImpl implements IBatchLineRegistrationS
     }
 
     private void markBatch(String batchId, String previousStatus, String newStatus) {
-        paymentBatchRepository.findById(batchId).ifPresent(batch -> {
-            String currentStatus = batch.getStatus();
-            batch.setStatus(newStatus);
-            paymentBatchRepository.save(batch);
-            saveStatusLog(batchId, currentStatus != null ? currentStatus : previousStatus, newStatus);
-        });
+        String currentStatus = paymentBatchRepository.findById(batchId)
+                .map(batch -> batch.getStatus() != null ? batch.getStatus() : previousStatus)
+                .orElse(previousStatus);
+        mongoTemplate.updateFirst(
+                Query.query(Criteria.where("_id").is(batchId)),
+                new Update().set("status", newStatus),
+                ec.edu.espe.switchpayments.switchbatch.model.PaymentBatchDocument.class);
+        saveStatusLog(batchId, currentStatus, newStatus);
     }
 
     private void saveStatusLog(String batchId, String previousStatus, String newStatus) {

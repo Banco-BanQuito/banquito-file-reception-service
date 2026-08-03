@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -194,6 +195,7 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
     private BatchStatusResponse initialStatus(PaymentBatchDocument batch) {
         int declared = safeInt(batch.getDeclaredTotalRecords());
         int registered = Math.toIntExact(Math.min(paymentBatchLineRepository.countByBatchId(batch.getId()), Integer.MAX_VALUE));
+        batch = promoteReadyBatchIfFullyRegistered(batch, declared, registered);
         String status = normalizeStatus(batch.getStatus());
         String message = "Registrando lineas del archivo: " + registered + "/" + declared;
         return new BatchStatusResponse(
@@ -210,6 +212,23 @@ public class FileReceptionServiceImpl implements IFileReceptionService {
                 null,
                 message,
                 null);
+    }
+
+    private PaymentBatchDocument promoteReadyBatchIfFullyRegistered(PaymentBatchDocument batch, int declared, int registered) {
+        if (!"RECEIVING".equalsIgnoreCase(batch.getStatus()) || declared <= 0 || registered < declared) {
+            return batch;
+        }
+        String nextStatus = shouldProcessNow(batch.getScheduledProcessAt()) ? "EN_PROCESO" : "PROGRAMADO";
+        mongoTemplate.updateFirst(
+                Query.query(Criteria.where("_id").is(batch.getId())),
+                new Update().set("status", nextStatus),
+                PaymentBatchDocument.class);
+        batch.setStatus(nextStatus);
+        return batch;
+    }
+
+    private boolean shouldProcessNow(Instant scheduledProcessAt) {
+        return scheduledProcessAt == null || !scheduledProcessAt.isAfter(Instant.now(clock));
     }
 
     private BatchStatusResponse dispatchStatus(Document batch) {
